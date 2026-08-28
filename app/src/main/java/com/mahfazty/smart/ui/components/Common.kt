@@ -53,8 +53,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
@@ -416,6 +418,9 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
     val reduceMotion = com.mahfazty.smart.ui.theme.rememberReduceMotion()
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
     val maxValue = bars.maxOf { it.value }.coerceAtLeast(1.0)
+    // إصلاح انعكاس الأيام: الرسم داخل Canvas لا يراعي اتجاه RTL إطلاقاً (إحداثيات فيزيائية دائماً)،
+    // بينما صف التسميات تحته يُرتَّب RTL — فكان كل عمود يقف فوق يوم معكوس. نلتقط الاتجاه هنا لنعاكس المواضع.
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     // نبض عمود "اليوم" (آخر عمود) — يجذب العين لأحدث البيانات
     val pulseAlpha = if (highlightLast && !reduceMotion) {
         val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "todayPulse")
@@ -457,7 +462,10 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
             bars.forEachIndexed { index, bar ->
                 val h = (fractions[index] * chartHeight)
                     .coerceAtLeast(if (bar.value > 0) 6.dp.toPx() else 2.dp.toPx())
-                val left = gap + index * (barWidth + gap)
+                // إصلاح: في RTL يُرسم أقدم عمود في أقصى اليمين و«اليوم» في أقصى اليسار —
+                // مطابقاً لترتيب صف التسميات تحته، فيقف كل عمود فوق يومه الصحيح
+                val left = if (rtl) size.width - gap - barWidth - index * (barWidth + gap)
+                else gap + index * (barWidth + gap)
                 val top = chartHeight - h
                 val isToday = highlightLast && index == bars.lastIndex
                 drawRoundRect(
