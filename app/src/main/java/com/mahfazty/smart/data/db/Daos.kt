@@ -109,6 +109,10 @@ interface AccountDao {
     @Query("SELECT * FROM accounts")
     suspend fun getAll(): List<AccountEntity>
 
+    /** إصلاح A4/B6: جلب مباشر بالمعرف بدل تحميل كل الجدول — للاستخدام داخل المعاملات الذرّية */
+    @Query("SELECT * FROM accounts WHERE id = :id")
+    suspend fun getById(id: Long): AccountEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(account: AccountEntity)
 

@@ -41,6 +41,8 @@ fun WalletError.message(): String = when (this) {
     is WalletError.OverWithdraw -> "المبلغ أكبر من المدخر"
     WalletError.EmptySavings -> "لا يوجد مدخرات للسحب"
     is WalletError.InsufficientReal -> "الرصيد الحقيقي غير كافٍ"
+    WalletError.ProtectedCategory -> "هذه العملية تخص فئة نظام (أهداف/ادخار/عملاء) — تُدار من شاشتها المخصصة فقط"
+    WalletError.UnsafeDelete -> "حذف هذه العملية يجعل رصيداً أو مدخراً سالباً — احذف العمليات الأحدث أولاً"
 }
 
 /** اقتراح سحب سريع (من هدف أو ادخار) عند نقص الرصيد */
@@ -443,8 +445,10 @@ class TransactionsViewModel(
     }
 
     fun deleteTransaction(tx: Transaction) = viewModelScope.launch {
-        walletRepo.deleteTransaction(tx)
-        _toast.emit("تم حذف العملية")
+        // إصلاح A3: الحذف قد يُرفض إذا كسر ثابت «لا رصيد/مدخر سالب»
+        walletRepo.deleteTransaction(tx)?.let { err ->
+            _toast.emit(err.message())
+        } ?: _toast.emit("تم حذف العملية")
     }
 
     fun duplicateTransaction(tx: Transaction) = viewModelScope.launch {

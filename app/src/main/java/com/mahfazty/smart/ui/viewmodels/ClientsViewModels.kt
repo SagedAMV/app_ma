@@ -217,7 +217,8 @@ class AccountOpsViewModel(
 
     fun deleteSelected() = viewModelScope.launch {
         val ops = account.value?.operations?.filter { it.id in _selection.value } ?: emptyList()
-        ops.forEach { repo.deleteOperation(it) }
+        // إصلاح B4: دفعة ذرّية واحدة بدل حلقة معاملات منفصلة
+        repo.deleteOperations(ops)
         _selection.value = emptySet()
         _toast.emit("تم حذف ${ops.size} عملية")
     }

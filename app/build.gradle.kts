@@ -13,8 +13,8 @@ android {
         applicationId = "com.mahfazty.smart"
         minSdk = 24
         targetSdk = 35
-        versionCode = 15
-        versionName = "2.5.1"
+        versionCode = 16
+        versionName = "2.5.2"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -47,6 +47,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+// إصلاح A1: تصدير مخططات Room إلى app/schemas — أساس كتابة ترحيلات صحيحة عند أي تغيير مستقبلي
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {

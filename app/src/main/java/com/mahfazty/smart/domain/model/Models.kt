@@ -35,6 +35,16 @@ object CategoryIds {
     /** الفئات التي تخصم من الرصيد الحقيقي عند حساب الدخل/المصروف الفعلي */
     val nonRealExpense = setOf(GOAL_ADD, SAVINGS_ADD)
     val nonRealIncome = setOf(GOAL_WITHDRAW, SAVINGS_WITHDRAW)
+
+    /**
+     * فئات النظام: لا يجوز إنشاؤها/تعديلها من المسار العام (نافذة إضافة/تعديل/تكرار عملية)
+     * لأن لكل واحدة مساراً مخصصاً يفحص السعة (الأهداف/الادخار/التحويل/شحن العملاء).
+     * إصلاح A2: منع «خلق المال من العدم» عبر تكرار أو تعديل عمليات هذه الفئات.
+     */
+    val protectedCategories = setOf(
+        GOAL_ADD, GOAL_WITHDRAW, SAVINGS_ADD, SAVINGS_WITHDRAW,
+        BANK_TO_CASH, CASH_TO_BANK, CLIENT_FUND, CLIENT_WITHDRAW,
+    )
 }
 
 /** فئة (تصنيف) للعمليات */
@@ -158,6 +168,12 @@ sealed interface WalletError {
     data class OverWithdraw(val have: Double, val need: Double) : WalletError
     data object EmptySavings : WalletError
     data class InsufficientReal(val have: Double, val need: Double) : WalletError
+
+    /** إصلاح A2/B1: العملية تخص فئة نظام تُدار من شاشاتها المخصصة فقط */
+    data object ProtectedCategory : WalletError
+
+    /** إصلاح A3: الحذف سيجعل رصيداً أو مدخراً سالباً — يُرفض */
+    data object UnsafeDelete : WalletError
 }
 
 /** هدف مع مدخره المشتق */

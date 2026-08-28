@@ -101,7 +101,7 @@ data class TransferEntity(
 // ============ تحويلات الكيانات ↔ نماذج النطاق ============
 
 fun TransactionEntity.toDomain(): Transaction = Transaction(
-    id = id, type = TxType.valueOf(type), amount = amount, category = category,
+    id = id, type = runCatching { TxType.valueOf(type) }.getOrDefault(TxType.EXPENSE), amount = amount, category = category,
     note = note, date = date, goalId = goalId,
     wallet = runCatching { Wallet.valueOf(wallet) }.getOrDefault(Wallet.CASH),
 )

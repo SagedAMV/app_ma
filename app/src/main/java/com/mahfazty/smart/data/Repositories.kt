@@ -168,6 +168,9 @@ class WalletRepository(
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
         // حماية: التحويلات بين الصناديق تمر عبر المسار المفحوص فقط (لا يمكن تجاوز قاعدة منع السالب)
         if (type == TxType.TRANSFER) return transfer(category, amount, note)
+        // إصلاح A2: فئات النظام لا تُنشأ من المسار العام — لكل منها مسار مخصص يفحص السعة
+        // (يمنع خلق المال عبر «تكرار» عملية سحب ادخار/هدف/رصيد عميل)
+        if (category in CategoryIds.protectedCategories) return WalletError.ProtectedCategory
         if (type == TxType.EXPENSE) {
             checkExpenseSync(amount, wallet)?.let { return it }
         }
@@ -184,6 +187,11 @@ class WalletRepository(
     suspend fun updateTransaction(updated: Transaction): WalletError? {
         if (updated.amount <= 0 || updated.amount.isNaN()) return WalletError.InvalidAmount
         val old = db.transactionDao().getById(updated.id)?.toDomain() ?: return WalletError.InvalidAmount
+        // إصلاح B1: عمليات فئات النظام لا تُعدَّل من النافذة العامة (لا تُحوَّل لفئة عادية والعكس)
+        // تحويل «إضافة لهدف» إلى «طعام» مثلاً يُسكت المنطق المشتق ويُفسد حساب المدخر
+        if (updated.category in CategoryIds.protectedCategories || old.category in CategoryIds.protectedCategories) {
+            return WalletError.ProtectedCategory
+        }
         // التراجع عن أثر العملية القديمة ثم التحقق من الجديدة
         val withoutOld = db.transactionDao().getAll().map { it.toDomain() }.filter { it.id != updated.id }
         if (updated.type == TxType.EXPENSE) {
@@ -206,7 +214,25 @@ class WalletRepository(
         return null
     }
 
-    suspend fun deleteTransaction(tx: Transaction) = db.transactionDao().delete(tx.toEntity())
+    /**
+     * إصلاح A3: حذف عملية يعني اختفاء أثرها المالي كله — يجب ألا يكسر أي ثابت:
+     * ١) بنك/كاش لا يصبحان سالبين (حذف دخل أو تحويل بعد صرفه)
+     * ٢) الادخار لا يصبح سالباً (حذف «إضافة ادخار» بعد سحبه)
+     * ٣) مدخر أي هدف لا يصبح سالباً (حذف «إضافة لهدف» بعد سحبه)
+     * هامش 0.000001 لامتصاص أخطاء الفاصلة العائمة في المبالغ العشرية.
+     */
+    suspend fun deleteTransaction(tx: Transaction): WalletError? {
+        val without = db.transactionDao().getAll().map { it.toDomain() }.filterNot { it.id == tx.id }
+        val bank = WalletEngine.bankBalance(settingsRepo.openingBankSync(), without)
+        val cash = WalletEngine.cashBalance(settingsRepo.openingCashSync(), without)
+        if (bank < -0.000001 || cash < -0.000001) return WalletError.UnsafeDelete
+        val savingsOpening = db.savingsDao().get()?.opening ?: 0.0
+        if (WalletEngine.savingsTotal(savingsOpening, without) < -0.000001) return WalletError.UnsafeDelete
+        val goals = db.goalDao().getAll().map { it.toDomain() }
+        if (goals.any { g -> WalletEngine.goalSaved(g.opening, g.id, without) < -0.000001 }) return WalletError.UnsafeDelete
+        db.transactionDao().delete(tx.toEntity())
+        return null
+    }
 
     suspend fun transfer(direction: String, amount: Double, note: String?): WalletError? {
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
@@ -296,8 +322,21 @@ class WalletRepository(
         return null
     }
 
-    private suspend fun checkExpenseSync(amount: Double, wallet: Wallet): WalletError? =
+    /**
+     * فحص كفاية الرصيد (نسخة متزامنة) — عام عمداً:
+     * يستدعيه مستودع العملاء داخل معاملاته الذرّية (إصلاح A4) حتى يجري الفحص والكتابة في معاملة واحدة.
+     */
+    suspend fun checkExpenseSync(amount: Double, wallet: Wallet): WalletError? =
         WalletEngine.checkExpense(amount, wallet, bankSync(), cashSync())
+
+    /**
+     * إدراج عملية نظامية (شحن/سحب رصيد حقيقي لعميل) دون حراس المسار العام —
+     * للاستخدام الحصري داخل معاملة ذرّية في ClientsRepository حيث تُفحص القيود ضمنياً.
+     * إصلاح A4: بهذا تبقى قرارات المال كلها داخل معاملة واحدة لا تقبل التشقق.
+     */
+    suspend fun insertSystemTransaction(tx: Transaction) {
+        db.transactionDao().insert(tx.toEntity())
+    }
 
     // ---------- إدارة البيانات ----------
 
@@ -669,21 +708,13 @@ class ClientsRepository(
 
     // ---------- العمليات (دين/سداد) ----------
 
-    private suspend fun realBalanceOf(accountId: Long): Double =
-        db.accountDao().getAll().firstOrNull { it.id == accountId }?.realBalance ?: 0.0
-
-    private suspend fun updateRealBalance(accountId: Long, newValue: Double) {
-        val acc = db.accountDao().getAll().firstOrNull { it.id == accountId } ?: return
-        db.accountDao().update(acc.copy(realBalance = newValue))
-    }
-
     suspend fun addOperation(
         accountId: Long, type: OpType, amount: Double, note: String?,
         materials: List<MaterialItem>, receiptPath: String?,
     ): WalletError? {
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
         return db.withTransaction {
-            val acc = db.accountDao().getAll().firstOrNull { it.id == accountId }
+            val acc = db.accountDao().getById(accountId)
                 ?: return@withTransaction WalletError.InvalidAmount
             if (type == OpType.DEBT) {
                 WalletEngine.checkDebtAgainstReal(acc.realBalance, amount)?.let { return@withTransaction it }
@@ -707,7 +738,7 @@ class ClientsRepository(
         return db.withTransaction {
             val old = db.operationDao().getAll().firstOrNull { it.id == updated.id }
                 ?: return@withTransaction WalletError.InvalidAmount
-            val acc = db.accountDao().getAll().firstOrNull { it.id == updated.accountId }
+            val acc = db.accountDao().getById(updated.accountId)
                 ?: return@withTransaction WalletError.InvalidAmount
             val oldType = runCatching { OpType.valueOf(old.type) }.getOrDefault(OpType.DEBT)
             val balBefore = WalletEngine.reverseOpFromReal(acc.realBalance, oldType, old.amount)
@@ -723,7 +754,7 @@ class ClientsRepository(
     }
 
     suspend fun deleteOperation(op: ClientOperation) = db.withTransaction {
-        val acc = db.accountDao().getAll().firstOrNull { it.id == op.accountId }
+        val acc = db.accountDao().getById(op.accountId)
         if (acc != null) {
             db.accountDao().update(
                 acc.copy(realBalance = WalletEngine.reverseOpFromReal(acc.realBalance, op.type, op.amount)),
@@ -732,50 +763,79 @@ class ClientsRepository(
         db.operationDao().delete(op.toEntity())
     }
 
+    /** إصلاح B4: حذف جماعي ذرّي — كل العمليات في معاملة واحدة، فلا حذف جزئي عند انقطاع منتصف الطريق */
+    suspend fun deleteOperations(ops: List<ClientOperation>) = db.withTransaction {
+        ops.forEach { op ->
+            val acc = db.accountDao().getById(op.accountId)
+            if (acc != null) {
+                db.accountDao().update(
+                    acc.copy(realBalance = WalletEngine.reverseOpFromReal(acc.realBalance, op.type, op.amount)),
+                )
+            }
+            db.operationDao().delete(op.toEntity())
+        }
+    }
+
     // ---------- الرصيد الحقيقي: شحن/سحب/تحويل ----------
+    // إصلاح A4: العمليات الثلاث أصبحت ذرّية بالكامل — الفحص والخصم والإدراج
+    // في معاملة واحدة على نفس قاعدة البيانات، فلا سباق بين كوروتينين متوازيين
+    // ولا «نجاح صامت» يُنشئ مالاً أو يُفقده إذا تغير الرصيد في منتصف الطريق.
 
     suspend fun fundReal(accountId: Long, amount: Double, from: Wallet): WalletError? {
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
-        walletRepo.addTransaction(
-            type = TxType.EXPENSE, amount = amount, category = CategoryIds.CLIENT_FUND,
-            note = "شحن رصيد حقيقي من ${if (from == Wallet.BANK) "البنك" else "الكاش"}",
-            wallet = from,
-        )?.let { return it }
-        // ذرّية: القراءة والتعديل داخل معاملة واحدة (منع سباق كوروتينين متوازيين)
-        db.withTransaction {
-            val acc = db.accountDao().getAll().firstOrNull { it.id == accountId } ?: return@withTransaction
+        return db.withTransaction {
+            // فحص كفاية الصندوق داخل المعاملة نفسها (لا فجوة زمنية بعده)
+            walletRepo.checkExpenseSync(amount, from)?.let { return@withTransaction it }
+            val acc = db.accountDao().getById(accountId) ?: return@withTransaction WalletError.InvalidAmount
+            walletRepo.insertSystemTransaction(
+                Transaction(
+                    id = Ids.next(), type = TxType.EXPENSE, amount = amount,
+                    category = CategoryIds.CLIENT_FUND,
+                    note = "شحن رصيد حقيقي من ${if (from == Wallet.BANK) "البنك" else "الكاش"}",
+                    date = System.currentTimeMillis(), wallet = from,
+                ),
+            )
             db.accountDao().update(acc.copy(realBalance = acc.realBalance + amount))
+            null
         }
-        return null
     }
 
     suspend fun withdrawReal(accountId: Long, amount: Double, to: Wallet): WalletError? {
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
-        val real = realBalanceOf(accountId)
-        if (amount > real) return WalletError.InsufficientReal(real, amount)
-        walletRepo.addTransaction(
-            type = TxType.INCOME, amount = amount, category = CategoryIds.CLIENT_WITHDRAW,
-            note = "سحب من رصيد حقيقي إلى ${if (to == Wallet.BANK) "البنك" else "الكاش"}",
-            wallet = to,
-        )?.let { return it }
-        // ذرّية + فحص ثانٍ داخل المعاملة: حتى لو تغير الرصيد أثناء التنفيذ لا نصبح سالبين
-        db.withTransaction {
-            val acc = db.accountDao().getAll().firstOrNull { it.id == accountId } ?: return@withTransaction
-            if (acc.realBalance - amount < 0) return@withTransaction
+        return db.withTransaction {
+            val acc = db.accountDao().getById(accountId) ?: return@withTransaction WalletError.InvalidAmount
+            // الفحص والخصم في نفس المعاملة — لا مسار يُنجح السحب دون خصم فعلي
+            if (acc.realBalance - amount < 0) {
+                return@withTransaction WalletError.InsufficientReal(acc.realBalance, amount)
+            }
+            walletRepo.insertSystemTransaction(
+                Transaction(
+                    id = Ids.next(), type = TxType.INCOME, amount = amount,
+                    category = CategoryIds.CLIENT_WITHDRAW,
+                    note = "سحب من رصيد حقيقي إلى ${if (to == Wallet.BANK) "البنك" else "الكاش"}",
+                    date = System.currentTimeMillis(), wallet = to,
+                ),
+            )
             db.accountDao().update(acc.copy(realBalance = acc.realBalance - amount))
+            null
         }
-        return null
     }
 
     suspend fun transferReal(
         fromClientId: Long, fromAccountId: Long, toClientId: Long, toAccountId: Long, amount: Double,
     ): WalletError? {
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
-        val fromReal = realBalanceOf(fromAccountId)
-        if (amount > fromReal) return WalletError.InsufficientReal(fromReal, amount)
-        db.withTransaction {
-            updateRealBalance(fromAccountId, fromReal - amount)
-            updateRealBalance(toAccountId, realBalanceOf(toAccountId) + amount)
+        // منع تحويل الحساب إلى نفسه — كان يُنشئ سجل تحويل بلا أثر مالي
+        if (fromAccountId == toAccountId) return WalletError.InvalidAmount
+        return db.withTransaction {
+            // القراءة والفحص والخصم للطرفين داخل معاملة واحدة — يمنع فقدان التحديث (lost update)
+            val from = db.accountDao().getById(fromAccountId) ?: return@withTransaction WalletError.InvalidAmount
+            val to = db.accountDao().getById(toAccountId) ?: return@withTransaction WalletError.InvalidAmount
+            if (from.realBalance - amount < 0) {
+                return@withTransaction WalletError.InsufficientReal(from.realBalance, amount)
+            }
+            db.accountDao().update(from.copy(realBalance = from.realBalance - amount))
+            db.accountDao().update(to.copy(realBalance = to.realBalance + amount))
             db.transferDao().insert(
                 TransferEntity(
                     id = Ids.next(), fromClientId = fromClientId, fromAccountId = fromAccountId,
@@ -783,8 +843,8 @@ class ClientsRepository(
                     amount = amount, date = System.currentTimeMillis(),
                 ),
             )
+            null
         }
-        return null
     }
 
     /** نص مشاركة واتساب لكشف حساب */

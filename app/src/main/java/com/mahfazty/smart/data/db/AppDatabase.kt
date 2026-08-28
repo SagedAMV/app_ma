@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 
 @Database(
     entities = [
@@ -12,7 +13,7 @@ import androidx.room.RoomDatabase
         OperationEntity::class, TransferEntity::class,
     ],
     version = 1,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
@@ -28,6 +29,13 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        /**
+         * سجل الترحيلات — إصلاح A1:
+         * عند أي تعديل مستقبلي على المخطط: ارفع version وأضف Migration(قديم, جديد) هنا.
+         * المخططات تُصدَّر تلقائياً إلى app/schemas (بفضل room.schemaLocation) للمقارنة وكتابة ترحيل صحيح.
+         */
+        private val MIGRATIONS = arrayOf<Migration>()
+
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -35,7 +43,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "mahfazty.db",
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(*MIGRATIONS)
+                    // أُزيل fallbackToDestructiveMigration عمداً:
+                    // لا مسح صامت لبيانات المستخدم المالية مهما حدث —
+                    // أي ترقية مخطط بلا ترحيل صريح تظهر كخطأ واضح يُصلح، لا كفقدان بيانات خفي.
                     .build()
                     .also { INSTANCE = it }
             }
