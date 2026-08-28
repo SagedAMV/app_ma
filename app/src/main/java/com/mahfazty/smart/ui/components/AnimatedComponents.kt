@@ -84,7 +84,7 @@ fun Modifier.bounceClick(): Modifier = composed {
                 }
                 if (!reduce) {
                     scope.launch { scale.animateTo(1f, Motion.springPress) }
-                    scope.launch { press.animateTo(0f, tween(620, easing = LinearOutSlowInEasing)) }
+                    scope.launch { press.animateTo(0f, tween(380, easing = LinearOutSlowInEasing)) }
                 }
             }
         }
@@ -110,12 +110,12 @@ fun SwingCardEntrance(
             return@LaunchedEffect
         }
         delay((index * Motion.STAGGER_STEP_MS).toLong())
-        launch { alpha.animateTo(1f, tween(480, easing = LinearOutSlowInEasing)) }
+        launch { alpha.animateTo(1f, tween(380, easing = LinearOutSlowInEasing)) }
         // 1) يدخل مائلاً كعقرب ساعة ثم يتأرجح نحو الداخل
         rotation.snapTo(-7f)
-        rotation.animateTo(5f, tween(560, easing = LinearOutSlowInEasing))
+        rotation.animateTo(5f, tween(430, easing = LinearOutSlowInEasing))
         // 2) ارتداد معاكس خفيف — تأثير الجاذبية
-        rotation.animateTo(-2.5f, tween(420, easing = LinearOutSlowInEasing))
+        rotation.animateTo(-2.5f, tween(320, easing = LinearOutSlowInEasing))
         // 3) الاستقرار المتدرج في الوضع الطبيعي
         rotation.animateTo(0f, Motion.springGentle)
     }
@@ -146,7 +146,7 @@ fun ElasticEntrance(
             return@LaunchedEffect
         }
         delay((index * Motion.STAGGER_STEP_MS).toLong())
-        t.animateTo(1f, tween(900, easing = Motion.elasticOut))
+        t.animateTo(1f, tween(600, easing = Motion.elasticOut))
     }
     val v = t.value
     Box(
@@ -218,7 +218,7 @@ fun ConfettiOverlay(onFinished: () -> Unit) {
     LaunchedEffect(Unit) {
         if (reduce) { onFinished(); return@LaunchedEffect }
         progress.snapTo(0f)
-        progress.animateTo(1f, tween(1700, easing = LinearOutSlowInEasing))
+        progress.animateTo(1f, tween(1000, easing = LinearOutSlowInEasing))
         onFinished()
     }
     val p = progress.value
@@ -364,9 +364,9 @@ fun StaggeredLetters(text: String, visible: Boolean, style: TextStyle, color: Co
             androidx.compose.animation.AnimatedVisibility(
                 visible = visible,
                 enter = androidx.compose.animation.fadeIn(
-                    tween(400, delayMillis = if (reduce) 0 else index * 60),
+                    tween(320, delayMillis = if (reduce) 0 else index * 45),
                 ) + androidx.compose.animation.slideInVertically(
-                    tween(400, delayMillis = if (reduce) 0 else index * 60),
+                    tween(320, delayMillis = if (reduce) 0 else index * 45),
                 ) { it / 2 },
             ) {
                 Text(ch.toString(), style = style, color = color)

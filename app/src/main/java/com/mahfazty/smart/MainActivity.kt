@@ -95,15 +95,15 @@ class MainActivity : ComponentActivity() {
                     val reduceMotion = rememberReduceMotion()
                     var showSplash by remember { mutableStateOf(true) }
                     LaunchedEffect(Unit) {
-                        // مهارة 4: الدخول أطول من الخروج — السائل يحتاج ~1.8ث + استقرار
-                        delay(if (reduceMotion) 350 else 2400)
+                        // مهارة 4: الدخول أطول من الخروج — السائل يحتاج ~1.2ث + استقرار
+                        delay(if (reduceMotion) 350 else 1400)
                         showSplash = false
                     }
                     Box(Modifier.fillMaxSize()) {
                         AppRoot(mainViewModel)
                         AnimatedVisibility(
                             visible = showSplash,
-                            exit = fadeOut(tween(450)) + scaleOut(targetScale = 1.06f, animationSpec = tween(450)),
+                            exit = fadeOut(tween(380)) + scaleOut(targetScale = 1.06f, animationSpec = tween(380)),
                         ) {
                             SplashScreen()
                         }
@@ -166,26 +166,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 Routes.HOME,
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) {
                 val vm: HomeViewModel = viewModel(factory = viewModelFactory {
@@ -224,26 +224,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 Routes.TRANSACTIONS,
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) {
                 val vm: TransactionsViewModel = viewModel(factory = viewModelFactory {
@@ -279,26 +279,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 Routes.GOALS,
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) {
                 val vm: GoalsViewModel = viewModel(factory = viewModelFactory {
@@ -329,26 +329,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 Routes.SAVINGS,
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) {
                 val vm = viewModel<com.mahfazty.smart.ui.viewmodels.SavingsViewModel>(factory = viewModelFactory {
@@ -377,26 +377,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 Routes.CLIENTS,
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) {
                 val vm: ClientsViewModel = viewModel(factory = viewModelFactory {
@@ -421,26 +421,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 arguments = listOf(navArgument("clientId") { type = NavType.LongType }),
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) { entry ->
                 // السبب الجذري سابقاً: كان المعرف يُقرأ من SavedStateHandle الذي يحمل نصاً بدل رقم.
@@ -477,26 +477,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 ),
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) { entry ->
                 // نفس إصلاح شاشة العميل: القراءة من وسائط الوجهة مباشرة (نوع مضمون Long)
@@ -565,26 +565,26 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 Routes.SETTINGS,
                 enterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 exitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
                 popEnterTransition = {
                     if (reduceMotion) EnterTransition.None
-                    else fadeIn(tween(420, easing = LinearOutSlowInEasing)) +
-                        slideInHorizontally(tween(480, easing = LinearOutSlowInEasing)) { -it / 8 } +
-                        scaleIn(tween(420, easing = LinearOutSlowInEasing), initialScale = 0.96f)
+                    else fadeIn(tween(330, easing = LinearOutSlowInEasing)) +
+                        slideInHorizontally(tween(340, easing = LinearOutSlowInEasing)) { -it / 8 } +
+                        scaleIn(tween(330, easing = LinearOutSlowInEasing), initialScale = 0.96f)
                 },
                 popExitTransition = {
                     if (reduceMotion) ExitTransition.None
-                    else fadeOut(tween(300, easing = FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(340, easing = FastOutLinearInEasing)) { it / 8 } +
-                        scaleOut(tween(300, easing = FastOutLinearInEasing), targetScale = 0.98f)
+                    else fadeOut(tween(220, easing = FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(230, easing = FastOutLinearInEasing)) { it / 8 } +
+                        scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) {
                 val vm: SettingsViewModel = viewModel(factory = viewModelFactory {

@@ -443,7 +443,7 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
             targetValue = if (bar.value > 0) (bar.value / maxValue).toFloat() else 0f,
             animationSpec = if (reduceMotion) androidx.compose.animation.core.snap()
             else androidx.compose.animation.core.tween(
-                durationMillis = 900,
+                durationMillis = 600,
                 delayMillis = index * Motion.STAGGER_STEP_MS,
                 easing = Motion.elasticOut,
             ),

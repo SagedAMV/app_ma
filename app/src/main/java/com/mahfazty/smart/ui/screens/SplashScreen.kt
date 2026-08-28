@@ -64,41 +64,41 @@ fun SplashScreen() {
         // مهارة 8 ترقّب: لحظة سكون قبل الاندفاع
         delay(80)
 
-        // مهارة 4+5+6+9: 1800ms، يتجاوز 78% ثم يستقر 62% (متابعة سائل)
+        // مهارة 4+5+6+9: 1200ms، يتجاوز 78% ثم يستقر 62% (متابعة سائل)
         // مهارة 6: LinearOutSlowInEasing = دخول سريع ثم هبوط ناعم
         launch {
             liquid.animateTo(
                 targetValue = 0.62f,
                 animationSpec = keyframes {
-                    durationMillis = 1800
+                    durationMillis = 1200
                     0f at 0
-                    0.78f at 1260 with LinearOutSlowInEasing
-                    0.62f at 1800 with LinearOutSlowInEasing
+                    0.78f at 840 with LinearOutSlowInEasing
+                    0.62f at 1200 with LinearOutSlowInEasing
                 },
             )
         }
 
         // مهارة 10 تتابع: الشعار ثم العنوان ثم السطر — فواصل ~180ms
         launch {
-            delay(900)
-            launch { logoA.animateTo(1f, tween(700, easing = LinearOutSlowInEasing)) }
+            delay(500)
+            launch { logoA.animateTo(1f, tween(450, easing = LinearOutSlowInEasing)) }
             launch { logoS.animateTo(1f, Motion.springGentle) } // مهارة 7 نابض استقرار
         }
         launch {
-            delay(1080)
-            launch { titleA.animateTo(1f, tween(640, easing = LinearOutSlowInEasing)) }
-            launch { titleY.animateTo(0f, tween(640, easing = LinearOutSlowInEasing)) }
+            delay(700)
+            launch { titleA.animateTo(1f, tween(420, easing = LinearOutSlowInEasing)) }
+            launch { titleY.animateTo(0f, tween(420, easing = LinearOutSlowInEasing)) }
         }
         launch {
-            delay(1200)
-            launch { subA.animateTo(1f, tween(640, easing = LinearOutSlowInEasing)) }
-            launch { subY.animateTo(0f, tween(640, easing = LinearOutSlowInEasing)) }
+            delay(880)
+            launch { subA.animateTo(1f, tween(420, easing = LinearOutSlowInEasing)) }
+            launch { subY.animateTo(0f, tween(420, easing = LinearOutSlowInEasing)) }
         }
 
         // مهارة 9 سطح السائل يبقى يتنفس بعد الامتلاء (متابعة) — رخيص: زاوية فقط
         launch {
-            delay(1260)
-            wave.animateTo(1f, tween(2400, easing = LinearOutSlowInEasing))
+            delay(920)
+            wave.animateTo(1f, tween(1400, easing = LinearOutSlowInEasing))
         }
     }
 

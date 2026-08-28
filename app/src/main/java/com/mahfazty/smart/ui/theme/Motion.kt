@@ -23,25 +23,25 @@ object Motion {
 
     // ===== المدد الزمنية (مهارة الملحق 42: سلم المدد الناعمة — مرئية للعين لا عابرة) =====
     const val QUICK_MS = 220        // تفاعلات دقيقة (ضغطة — يظهر وميضها للعين)
-    const val STANDARD_MS = 380     // انتقالات عادية (بطاقات، عدّادات)
-    const val SLOW_MS = 520         // نوافذ ولحظات كبيرة
-    const val PAGE_MS = 460         // انتقالات الصفحات — تُرى بوضوح وتُتابع
+    const val STANDARD_MS = 340     // انتقالات عادية (بطاقات، عدّادات)
+    const val SLOW_MS = 460         // نوافذ ولحظات كبيرة
+    const val PAGE_MS = 340         // انتقالات الصفحات — تُرى بوضوح وتُتابع
 
     // ===== فاصل التتابع المتدرج (مهارة التفكير 10 + الملحق 47) =====
-    const val STAGGER_STEP_MS = 90
-    const val FIELD_STAGGER_MS = 110   // تتابع خانات النوافذ
+    const val STAGGER_STEP_MS = 50
+    const val FIELD_STAGGER_MS = 70   // تتابع خانات النوافذ
 
     // ===== مواصفات Float (شفافية، حجم، تقدم) =====
     val quick = tween<Float>(QUICK_MS, easing = FastOutSlowInEasing)
     val standard = tween<Float>(STANDARD_MS, easing = FastOutSlowInEasing)
     val slow = tween<Float>(SLOW_MS, easing = FastOutSlowInEasing)
-    val enter = tween<Float>(450, easing = LinearOutSlowInEasing)      // دخول: سريع ثم هبوط ناعم
-    val exit = tween<Float>(320, easing = FastOutLinearInEasing)       // خروج: هادئ ثم تسارع لطيف
-    val settle = tween<Float>(600, easing = LinearOutSlowInEasing)     // الاستقرار المتدرج (الملحق 43)
+    val enter = tween<Float>(340, easing = LinearOutSlowInEasing)      // دخول: سريع ثم هبوط ناعم
+    val exit = tween<Float>(240, easing = FastOutLinearInEasing)       // خروج: هادئ ثم تسارع لطيف
+    val settle = tween<Float>(460, easing = LinearOutSlowInEasing)     // الاستقرار المتدرج (الملحق 43)
 
     // ===== مواصفات IntOffset (انزلاق) =====
-    val enterOffset = tween<IntOffset>(460, easing = LinearOutSlowInEasing)
-    val exitOffset = tween<IntOffset>(320, easing = FastOutLinearInEasing)
+    val enterOffset = tween<IntOffset>(340, easing = LinearOutSlowInEasing)
+    val exitOffset = tween<IntOffset>(240, easing = FastOutLinearInEasing)
 
     // ===== النوابض الفيزيائية =====
     val springBounce = spring<Float>(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
@@ -53,16 +53,16 @@ object Motion {
     /** نظام 11 للرئيسية: منحنى مطاطي يتجاوز الهدف ثم يستقر (تفكير 7) */
     val elasticOut = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 
-    // ===== الاهتزاز الهادئ (الملحق 46): سعة صغيرة + موجات بطيئة + هبوط ناعم =====
+    // ===== الاهتزاز الهادئ (الملحق 46): سعة صغيرة + موجات بطيئة + هبوط ناعم (معايرة 2.5.4: 720→460ms) =====
     val softShake = keyframes<Float> {
-        durationMillis = 720
+        durationMillis = 460
         0f at 0
-        -7f at 110 with LinearOutSlowInEasing
-        6f at 230 with LinearOutSlowInEasing
-        -4f at 350 with LinearOutSlowInEasing
-        3f at 470 with LinearOutSlowInEasing
-        -1.5f at 580 with LinearOutSlowInEasing
-        0f at 720 with LinearOutSlowInEasing
+        -7f at 70 with LinearOutSlowInEasing
+        6f at 150 with LinearOutSlowInEasing
+        -4f at 230 with LinearOutSlowInEasing
+        3f at 310 with LinearOutSlowInEasing
+        -1.5f at 390 with LinearOutSlowInEasing
+        0f at 460 with LinearOutSlowInEasing
     }
 }
 
