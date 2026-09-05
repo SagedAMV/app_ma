@@ -137,7 +137,11 @@ data class MaterialItem(
     val total: Double get() = qty * unitPrice
 }
 
-/** عملية على حساب عميل: دين أو سداد */
+/**
+ * عملية على حساب عميل: دين أو سداد.
+ * حقول الفاتورة (isInvoice / invoiceRef / invoiceDelivered) وصفية بحتة —
+ * لا تدخل في أي حساب مالي (opsBalance / realBalance) إطلاقاً.
+ */
 data class ClientOperation(
     val id: Long,
     val accountId: Long,
@@ -147,6 +151,12 @@ data class ClientOperation(
     val date: Long,
     val materials: List<MaterialItem> = emptyList(),
     val receiptPath: String? = null,
+    /** هل هذه العملية فاتورة محددة (وليس مجرد دين/سداد عادي)؟ */
+    val isInvoice: Boolean = false,
+    /** رقم أو وصف الفاتورة — إجباري عند تفعيل isInvoice (مثال: "فاتورة يناير 2026") */
+    val invoiceRef: String? = null,
+    /** هل سُلّمت الفاتورة للعميل؟ (الفواتير غير المسلمة = معلقة) */
+    val invoiceDelivered: Boolean = false,
 )
 
 /** تحويل رصيد حقيقي بين حسابات العملاء */

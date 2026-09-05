@@ -185,29 +185,44 @@ class AccountOpsViewModel(
 
     fun clearSelection() { _selection.value = emptySet() }
 
-    fun addOperation(type: OpType, amount: Double, note: String?, materials: List<MaterialItem>, receiptPath: String?) =
-        viewModelScope.launch {
-            repo.addOperation(accountId, type, amount, note, materials, receiptPath)?.let { err ->
-                if (err is WalletError.InsufficientReal) {
-                    _pendingOp.value = PendingClientOp(type, amount, note, materials, receiptPath)
-                }
-                handleError(err, amount)
-            } ?: run {
-                _pendingOp.value = null
-                _toast.emit("تم حفظ العملية ✅")
+    fun addOperation(
+        type: OpType, amount: Double, note: String?,
+        materials: List<MaterialItem>, receiptPath: String?,
+        isInvoice: Boolean = false, invoiceRef: String? = null,
+    ) = viewModelScope.launch {
+        repo.addOperation(accountId, type, amount, note, materials, receiptPath, isInvoice, invoiceRef)?.let { err ->
+            if (err is WalletError.InsufficientReal) {
+                _pendingOp.value = PendingClientOp(
+                    type, amount, note, materials, receiptPath,
+                    isInvoice = isInvoice, invoiceRef = invoiceRef,
+                )
             }
+            handleError(err, amount)
+        } ?: run {
+            _pendingOp.value = null
+            _toast.emit("تم حفظ العملية ✅")
         }
+    }
 
     fun updateOperation(op: ClientOperation) = viewModelScope.launch {
             repo.updateOperation(op)?.let { err ->
                 if (err is WalletError.InsufficientReal) {
-                    _pendingOp.value = PendingClientOp(op.type, op.amount, op.note, op.materials, op.receiptPath, editing = op)
+                    _pendingOp.value = PendingClientOp(
+                        op.type, op.amount, op.note, op.materials, op.receiptPath,
+                        isInvoice = op.isInvoice, invoiceRef = op.invoiceRef, editing = op,
+                    )
                 }
                 handleError(err, op.amount)
             } ?: run {
             _pendingOp.value = null
             _toast.emit("تم التعديل ✅")
         }
+    }
+
+    /** تسليم فاتورة غير مسلمة (تُستدعى من Long Press في قائمة العمليات) */
+    fun markInvoiceDelivered(op: ClientOperation) = viewModelScope.launch {
+        repo.markInvoiceDelivered(op.id)
+        _toast.emit("تم تسليم الفاتورة ✅")
     }
 
     fun deleteOperation(op: ClientOperation) = viewModelScope.launch {

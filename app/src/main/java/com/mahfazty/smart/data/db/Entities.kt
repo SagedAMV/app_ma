@@ -2,6 +2,7 @@ package com.mahfazty.smart.data.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 import com.mahfazty.smart.domain.model.Client
 import com.mahfazty.smart.domain.model.ClientAccount
 import com.mahfazty.smart.domain.model.ClientOperation
@@ -84,6 +85,12 @@ data class OperationEntity(
     val date: Long,
     val materialsJson: String?,
     val receiptPath: String?,
+    /** حقول الفواتير (نظام «الفواتير وحالة التسليم») — وصفية بحتة */
+    @ColumnInfo(defaultValue = "0")
+    val isInvoice: Boolean = false,
+    val invoiceRef: String? = null,
+    @ColumnInfo(defaultValue = "0")
+    val invoiceDelivered: Boolean = false,
 )
 
 /** تحويل رصيد حقيقي بين حسابات */
@@ -127,12 +134,14 @@ fun OperationEntity.toDomain(): ClientOperation = ClientOperation(
     type = runCatching { OpType.valueOf(type) }.getOrDefault(OpType.DEBT),
     amount = amount, note = note, date = date,
     materials = materialsJson.toMaterials(), receiptPath = receiptPath,
+    isInvoice = isInvoice, invoiceRef = invoiceRef, invoiceDelivered = invoiceDelivered,
 )
 
 fun ClientOperation.toEntity(): OperationEntity = OperationEntity(
     id = id, accountId = accountId, type = type.name, amount = amount,
     note = note, date = date,
     materialsJson = materials.toJsonOrNull(), receiptPath = receiptPath,
+    isInvoice = isInvoice, invoiceRef = invoiceRef, invoiceDelivered = invoiceDelivered,
 )
 
 fun TransferEntity.toDomain(): RealTransfer = RealTransfer(

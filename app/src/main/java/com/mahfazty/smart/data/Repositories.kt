@@ -405,6 +405,10 @@ class WalletRepository(
                     put("date", o.date)
                     put("materials", o.materialsJson ?: JSONObject.NULL)
                     put("receiptPath", o.receiptPath ?: JSONObject.NULL)
+                    // نظام «الفواتير وحالة التسليم» — تُحفظ مع النسخة الاحتياطية
+                    put("isInvoice", o.isInvoice)
+                    put("invoiceRef", o.invoiceRef ?: JSONObject.NULL)
+                    put("invoiceDelivered", o.invoiceDelivered)
                 })
             }
         })
@@ -540,6 +544,10 @@ class WalletRepository(
                         date = o.getLong("date"),
                         materialsJson = if (o.isNull("materials")) null else o.getString("materials"),
                         receiptPath = if (o.isNull("receiptPath")) null else o.getString("receiptPath"),
+                        // النسخ القديمة بلا هذه المفاتيح → القيم الافتراضية false (عملية عادية)
+                        isInvoice = o.optBoolean("isInvoice", false),
+                        invoiceRef = if (o.isNull("invoiceRef")) null else o.optString("invoiceRef", "").ifBlank { null },
+                        invoiceDelivered = o.optBoolean("invoiceDelivered", false),
                     ))
                     opCount++
                 }
@@ -711,8 +719,12 @@ class ClientsRepository(
     suspend fun addOperation(
         accountId: Long, type: OpType, amount: Double, note: String?,
         materials: List<MaterialItem>, receiptPath: String?,
+        isInvoice: Boolean = false, invoiceRef: String? = null,
     ): WalletError? {
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
+        // حقول الفاتورة وصفية بحتة — تظهر في الإدخال ولا تدخل في الفحص المالي أبداً
+        // (إجبارية الحقل تتحقق في واجهة الإدخال برسالة واضحة للمستخدم)
+        val ref = if (isInvoice) invoiceRef?.ifBlank { null } else null
         return db.withTransaction {
             val acc = db.accountDao().getById(accountId)
                 ?: return@withTransaction WalletError.InvalidAmount
@@ -727,6 +739,7 @@ class ClientsRepository(
                     id = Ids.next(), accountId = accountId, type = type, amount = amount,
                     note = note?.ifBlank { null }, date = System.currentTimeMillis(),
                     materials = materials, receiptPath = receiptPath,
+                    isInvoice = isInvoice, invoiceRef = ref,
                 ).toEntity(),
             )
             null
@@ -774,6 +787,14 @@ class ClientsRepository(
             }
             db.operationDao().delete(op.toEntity())
         }
+    }
+
+    /** تسليم فاتورة: يقلب invoiceDelivered فقط — صفر تأثير على أي رصيد (حقل وصفي بحت) */
+    suspend fun markInvoiceDelivered(opId: Long): Boolean = db.withTransaction {
+        val entity = db.operationDao().getAll().firstOrNull { it.id == opId }
+            ?: return@withTransaction false
+        db.operationDao().insert(entity.copy(invoiceDelivered = true))
+        true
     }
 
     // ---------- الرصيد الحقيقي: شحن/سحب/تحويل ----------

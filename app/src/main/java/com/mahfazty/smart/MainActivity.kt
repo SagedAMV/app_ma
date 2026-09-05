@@ -547,6 +547,7 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     onUpdateOperation = vm::updateOperation,
                     onDeleteOperation = vm::deleteOperation,
                     onDeleteSelected = vm::deleteSelected,
+                    onMarkInvoiceDelivered = vm::markInvoiceDelivered,
                     onUpdateAccount = vm::updateAccount,
                     onDeleteAccount = vm::deleteAccount,
                     onFundReal = vm::fundReal,

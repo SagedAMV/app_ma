@@ -2,9 +2,10 @@ package com.mahfazty.smart.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -87,6 +90,9 @@ import com.mahfazty.smart.ui.theme.LocalAppColors
 import com.mahfazty.smart.ui.util.shareViaWhatsApp
 import com.mahfazty.smart.ui.viewmodels.ClientsUiState
 import com.mahfazty.smart.ui.viewmodels.InsufficientRealData
+
+/** لون شارات الفواتير غير المسلمة (برتقالي) — نظام «الفواتير وحالة التسليم» */
+private val InvoiceOrange = Color(0xFFF57C00)
 
 // =====================================================================
 // 1) شاشة قائمة العملاء
@@ -484,10 +490,11 @@ fun AccountOpsScreen(
     onBack: () -> Unit,
     onToggleSelect: (Long) -> Unit,
     onClearSelection: () -> Unit,
-    onAddOperation: (OpType, Double, String?, List<com.mahfazty.smart.domain.model.MaterialItem>, String?) -> Unit,
+    onAddOperation: (OpType, Double, String?, List<com.mahfazty.smart.domain.model.MaterialItem>, String?, Boolean, String?) -> Unit,
     onUpdateOperation: (ClientOperation) -> Unit,
     onDeleteOperation: (ClientOperation) -> Unit,
     onDeleteSelected: () -> Unit,
+    onMarkInvoiceDelivered: (ClientOperation) -> Unit,
     onUpdateAccount: (ClientAccount) -> Unit,
     onDeleteAccount: (Long) -> Unit,
     onFundReal: (Double, Wallet) -> Unit,
@@ -514,10 +521,17 @@ fun AccountOpsScreen(
     var showHistory by remember { mutableStateOf(false) }
     var editingAccount by remember { mutableStateOf(false) }
     var deletingAccount by remember { mutableStateOf(false) }
+    // نظام «الفواتير وحالة التسليم»: قائمة تسليم الفاتورة + فلتر الفواتير المعلقة
+    var invoiceMenuFor by remember { mutableStateOf<ClientOperation?>(null) }
+    var pendingInvoicesOnly by remember { mutableStateOf(false) }
 
     val client = clientData?.client
     val acc = account?.account
     val ops = account?.operations ?: emptyList()
+    // عداد حي للفواتير غير المسلمة (يُعرض في الفلتر)
+    val pendingInvoicesCount = ops.count { it.isInvoice && !it.invoiceDelivered }
+    // الفلتر يعرض الفواتير المعلقة فقط
+    val shownOps = if (pendingInvoicesOnly) ops.filter { it.isInvoice && !it.invoiceDelivered } else ops
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -671,30 +685,102 @@ fun AccountOpsScreen(
                 }
             }
             item {
-                Text(
-                    "العمليات (دين / سداد)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = LocalAppColors.current.muted,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "العمليات (دين / سداد)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LocalAppColors.current.muted,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             if (ops.isEmpty()) {
                 item { EmptyState("📋", "لا توجد عمليات بعد") }
             } else {
-                items(ops, key = { it.id }) { op ->
-                    ElasticEntrance(3) {
-                    Box(Modifier.animateItem()) {
-                        OpRow(
-                        op = op,
-                        currency = currency,
-                        selected = op.id in selection,
-                        onClick = {
-                            if (selection.isNotEmpty()) onToggleSelect(op.id)
-                            else editingOp = op
-                        },
-                        onLongClick = { onToggleSelect(op.id) },
-                    )
+                // ===== فلتر «الفواتير غير المسلمة» مع عداد حي =====
+                item {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val active = pendingInvoicesOnly
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(
+                                    if (active) InvoiceOrange.copy(alpha = 0.18f)
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                                .border(
+                                    width = if (active) 1.5.dp else 1.dp,
+                                    color = if (active) InvoiceOrange
+                                    else LocalAppColors.current.border,
+                                    shape = RoundedCornerShape(20.dp),
+                                )
+                                .clickable { pendingInvoicesOnly = !active }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                "🧾 فواتير غير مسلمة ($pendingInvoicesCount)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (active) InvoiceOrange else LocalAppColors.current.muted,
+                            )
+                        }
                     }
+                }
+                if (shownOps.isEmpty() && pendingInvoicesOnly) {
+                    item { EmptyState("🧾", "لا توجد فواتير معلقة — كلها سُلّمت 🎉") }
+                } else {
+                    items(shownOps, key = { it.id }) { op ->
+                        ElasticEntrance(3) {
+                        Box(Modifier.animateItem()) {
+                            OpRow(
+                                op = op,
+                                currency = currency,
+                                selected = op.id in selection,
+                                onClick = {
+                                    if (selection.isNotEmpty()) onToggleSelect(op.id)
+                                    else editingOp = op
+                                },
+                                onLongClick = {
+                                    // ضغطة مطولة على فاتورة غير مسلمة: قائمة تسليم الفاتورة
+                                    if (op.isInvoice && !op.invoiceDelivered) invoiceMenuFor = op
+                                    else onToggleSelect(op.id)
+                                },
+                            )
+                            DropdownMenu(
+                                expanded = invoiceMenuFor?.id == op.id,
+                                onDismissRequest = { invoiceMenuFor = null },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("✅ تسليم الفاتورة") },
+                                    onClick = {
+                                        invoiceMenuFor = null
+                                        onMarkInvoiceDelivered(op)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🔀 تحديد العملية") },
+                                    onClick = {
+                                        invoiceMenuFor = null
+                                        onToggleSelect(op.id)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("✏️ تعديل العملية") },
+                                    onClick = {
+                                        invoiceMenuFor = null
+                                        editingOp = op
+                                    },
+                                )
+                            }
+                        }
+                        }
                     }
                 }
             }
@@ -718,15 +804,21 @@ fun AccountOpsScreen(
                 editingOp = null
                 onClearPendingOp()
             },
-            onSave = { type, amount, note, materials, receipt ->
+            onSave = { type, amount, note, materials, receipt, isInvoice, invoiceRef ->
                 showAddOp = false
                 editingOp = null
                 if (editing != null) {
                     onUpdateOperation(
-                        editing.copy(type = type, amount = amount, note = note, materials = materials, receiptPath = receipt),
+                        editing.copy(
+                            type = type, amount = amount, note = note,
+                            materials = materials, receiptPath = receipt,
+                            isInvoice = isInvoice, invoiceRef = invoiceRef,
+                            // عند إلغاء صفة «فاتورة» تُصفَّر حالة التسليم أيضاً
+                            invoiceDelivered = if (isInvoice) editing.invoiceDelivered else false,
+                        ),
                     )
                 } else {
-                    onAddOperation(type, amount, note, materials, receipt)
+                    onAddOperation(type, amount, note, materials, receipt, isInvoice, invoiceRef)
                 }
             },
         )
@@ -877,6 +969,25 @@ private fun OpRow(
                             color = if (op.type == OpType.DEBT) LocalAppColors.current.red else LocalAppColors.current.green,
                         )
                     }
+                    // ===== شارة الفاتورة وحالة التسليم (نظام «الفواتير») =====
+                    if (op.isInvoice) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (op.invoiceDelivered) LocalAppColors.current.green.copy(alpha = 0.15f)
+                                    else InvoiceOrange.copy(alpha = 0.15f),
+                                )
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        ) {
+                            Text(
+                                if (op.invoiceDelivered) "✅📑 تم التسليم" else "🧾 غير مسلمة",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (op.invoiceDelivered) LocalAppColors.current.green else InvoiceOrange,
+                            )
+                        }
+                    }
                     Spacer(Modifier.width(8.dp))
                     if (op.materials.isNotEmpty()) {
                         Text("📦 ${op.materials.size} صنف", style = MaterialTheme.typography.labelSmall, color = LocalAppColors.current.muted)
@@ -889,6 +1000,15 @@ private fun OpRow(
                 Spacer(Modifier.height(4.dp))
                 if (!op.note.isNullOrBlank()) {
                     Text(op.note, style = MaterialTheme.typography.bodySmall, color = LocalAppColors.current.muted, maxLines = 1)
+                }
+                // رقم/وصف الفاتورة — يظهر تحت البيان بلون الفاتورة
+                if (op.isInvoice && !op.invoiceRef.isNullOrBlank()) {
+                    Text(
+                        "🧾 ${op.invoiceRef}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (op.invoiceDelivered) LocalAppColors.current.green else InvoiceOrange,
+                        maxLines = 1,
+                    )
                 }
                 Text(
                     Dates.dateTime(op.date),

@@ -18,6 +18,8 @@ data class PendingClientOp(
     val note: String?,
     val materials: List<MaterialItem>,
     val receiptPath: String?,
+    val isInvoice: Boolean = false,
+    val invoiceRef: String? = null,
     val editing: ClientOperation? = null,
 ) {
     fun toInitial(): ClientOperation {
@@ -31,6 +33,9 @@ data class PendingClientOp(
             date = base?.date ?: 0L,
             materials = materials,
             receiptPath = receiptPath,
+            isInvoice = isInvoice,
+            invoiceRef = invoiceRef,
+            invoiceDelivered = base?.invoiceDelivered ?: false,
         )
     }
 }

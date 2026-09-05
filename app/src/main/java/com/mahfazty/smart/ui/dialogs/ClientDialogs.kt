@@ -24,6 +24,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -178,7 +180,7 @@ fun OperationDialog(
     realBalance: Double,
     initial: ClientOperation? = null,
     onDismiss: () -> Unit,
-    onSave: (OpType, Double, String?, List<MaterialItem>, String?) -> Unit,
+    onSave: (OpType, Double, String?, List<MaterialItem>, String?, Boolean, String?) -> Unit,
 ) {
     val context = LocalContext.current
     var type by remember { mutableStateOf(initial?.type ?: OpType.DEBT) }
@@ -191,6 +193,9 @@ fun OperationDialog(
     }
     var showMaterials by remember { mutableStateOf(initial?.materials?.isNotEmpty() == true) }
     var receiptPath by remember { mutableStateOf(initial?.receiptPath) }
+    // نظام «الفواتير وحالة التسليم»
+    var isInvoice by remember { mutableStateOf(initial?.isInvoice ?: false) }
+    var invoiceRef by remember { mutableStateOf(initial?.invoiceRef ?: "") }
     var saveHint by remember { mutableStateOf<String?>(null) }
     val receiptPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { PhotoStore.save(context, it, "receipt")?.let { p -> receiptPath = p } }
@@ -295,6 +300,47 @@ fun OperationDialog(
                     ) { Text("إزالة", fontSize = 12.sp, color = LocalAppColors.current.red) }
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            // ===== نظام «الفواتير وحالة التسليم» =====
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (isInvoice) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "🧾 هذه العملية عبارة عن فاتورة",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { isInvoice = !isInvoice }
+                        .padding(vertical = 4.dp),
+                )
+                Switch(
+                    checked = isInvoice,
+                    onCheckedChange = { isInvoice = it },
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        checkedThumbColor = Color.White,
+                    ),
+                )
+            }
+            if (isInvoice) {
+                Spacer(Modifier.height(8.dp))
+                AppTextField(invoiceRef, { invoiceRef = it }, "رقم / وصف الفاتورة *")
+                Text(
+                    "تُظهر العملية شارة 🧾 برتقالية حتى تُسلَّم (بالضغط المطول) فتصبح ✅📑.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalAppColors.current.muted,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
             Spacer(Modifier.height(10.dp))
             Text(
                 "الرصيد الحقيقي الحالي: ${Money.fmt(realBalance)} $currency\n" +
@@ -316,11 +362,16 @@ fun OperationDialog(
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) {
-                        saveHint = null
-                        onSave(type, amt, note.ifBlank { null }, materials.toList(), receiptPath)
-                    } else {
-                        saveHint = "أدخل مبلغاً أكبر من صفر"
+                    when {
+                        amt <= 0 -> saveHint = "أدخل مبلغاً أكبر من صفر"
+                        isInvoice && invoiceRef.isBlank() -> saveHint = "اكتب رقم أو وصف الفاتورة (إجباري) قبل الحفظ"
+                        else -> {
+                            saveHint = null
+                            onSave(
+                                type, amt, note.ifBlank { null }, materials.toList(), receiptPath,
+                                isInvoice, invoiceRef.trim().ifBlank { null },
+                            )
+                        }
                     }
                 },
                 modifier = Modifier
