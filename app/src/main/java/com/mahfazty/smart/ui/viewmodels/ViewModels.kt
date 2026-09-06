@@ -163,7 +163,7 @@ class MainViewModel(
             .setConfirmationRequired(false)
             .build()
         BiometricPrompt(activity, androidx.core.content.ContextCompat.getMainExecutor(activity),
-            object : BiometricPrompt.Callback() {
+            object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     _clientsUnlocked.value = true
                 }

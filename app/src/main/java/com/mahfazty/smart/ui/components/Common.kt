@@ -527,7 +527,13 @@ object PhotoStore {
     data class PhotoResult(val path: String?, val error: String?)
 
     fun save(context: Context, uri: Uri, prefix: String): PhotoResult = runCatching {
-        val size = context.contentResolver.openInputStream(uri)?.use { it.length() } ?: 0L
+        // فحص حجم الملف المصدر قبل أي نسخ (بلا تحميله كاملًا أولًا)
+        val size = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                if (idx >= 0) cursor.getLong(idx) else -1L
+            } else -1L
+        } ?: -1L
         if (size > MAX_SOURCE_BYTES) {
             return@runCatching PhotoResult(null, "حجم الصورة كبير جداً (الحد الأقصى 20 م.ب) — اختر صورة أصغر")
         }

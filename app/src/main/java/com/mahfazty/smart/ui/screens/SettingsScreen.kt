@@ -350,6 +350,7 @@ fun SettingsScreen(
             // ===== الخصوصية والأمان =====
             // إصلاح sec-2: قفل تبويب العملاء بالبصمة أو رمز الجهاز
             SettingsSectionTitle("🔐 الخصوصية والأمان", 2)
+            var lockError by remember { mutableStateOf<String?>(null) }
             SettingRow("🔒 قفل تبويب العملاء", "يتطلب بصمة أو رمز الجهاز قبل عرض بيانات العملاء") {
                 Switch(
                     checked = settings.lockClients,
@@ -361,15 +362,25 @@ fun SettingsScreen(
                             if (BiometricManager.from(context).canAuthenticate(authenticators)
                                 == BiometricManager.BIOMETRIC_SUCCESS
                             ) {
+                                lockError = null
                                 vm.setLockClients(true)
                             } else {
-                                snackbar.showSnackbar("هذا الجهاز لا يدعم البصمة أو رمز القفل — لا يمكن تفعيل القفل")
+                                lockError = "هذا الجهاز لا يدعم البصمة أو رمز القفل — لا يمكن تفعيل القفل"
                             }
                         } else {
+                            lockError = null
                             vm.setLockClients(false)
                         }
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary),
+                )
+            }
+            lockError?.let { err ->
+                Text(
+                    "⚠️ $err",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalAppColors.current.red,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
                 )
             }
 
@@ -415,8 +426,9 @@ fun SettingsScreen(
             // إصلاح data-5: شريط تذكير — لم تعمل نسخة بعد أو آخرها قبل أسبوع
             val lastBackupTs by vm.lastBackupTs.collectAsStateWithLifecycle()
             val nowMs = System.currentTimeMillis()
-            if (lastBackupTs == null || nowMs - lastBackupTs > 7 * 86_400_000L) {
-                val daysAgo = lastBackupTs?.let { ((nowMs - it) / 86_400_000L).toInt() }
+            val lastBackup = lastBackupTs // نسخة محلية تتيح تضييق النوع (الخاصية المفوضة لا تُضيَّق)
+            if (lastBackup == null || nowMs - lastBackup > 7 * 86_400_000L) {
+                val daysAgo = lastBackup?.let { ((nowMs - it) / 86_400_000L).toInt() }
                 AppCard(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                     Row(
                         Modifier.padding(12.dp),
@@ -426,7 +438,7 @@ fun SettingsScreen(
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(
-                                if (lastBackupTs == null) "لم تعمل نسخة احتياطية بعد"
+                                if (lastBackup == null) "لم تعمل نسخة احتياطية بعد"
                                 else "آخر نسخة احتياطية قبل ${daysAgo} يوم",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = LocalAppColors.current.red,

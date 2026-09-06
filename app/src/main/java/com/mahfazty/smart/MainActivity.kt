@@ -160,8 +160,8 @@ private fun AppRoot(mainViewModel: MainViewModel) {
     }
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33) {
-            val granted = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                == PackageManager.PERMISSION_GRANTED
+            val granted = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
             if (granted) mainViewModel.checkDueNotifications(context)
             else requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {

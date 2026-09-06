@@ -3,6 +3,7 @@ package com.mahfazty.smart.data
 import androidx.room.withTransaction
 import com.mahfazty.smart.data.db.AccountEntity
 import com.mahfazty.smart.data.db.AppDatabase
+import com.mahfazty.smart.data.db.AuditLogEntity
 import com.mahfazty.smart.data.db.ClientEntity
 import com.mahfazty.smart.data.db.GoalEntity
 import com.mahfazty.smart.data.db.OperationEntity
@@ -15,6 +16,7 @@ import com.mahfazty.smart.data.db.toEntity
 import com.mahfazty.smart.data.db.toJsonOrNull
 import com.mahfazty.smart.data.db.toMaterials
 import com.mahfazty.smart.domain.Ids
+import com.mahfazty.smart.domain.Money
 import com.mahfazty.smart.domain.WalletEngine
 import com.mahfazty.smart.domain.model.AppSettings
 import com.mahfazty.smart.domain.model.Category

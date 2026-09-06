@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,7 @@ import com.mahfazty.smart.ui.components.AmountField
 import com.mahfazty.smart.ui.components.AppSheet
 import com.mahfazty.smart.ui.components.AppTextField
 import com.mahfazty.smart.ui.components.bounceClick
+import com.mahfazty.smart.ui.components.ConfirmDialog
 import com.mahfazty.smart.ui.components.PhotoAvatar
 import com.mahfazty.smart.ui.components.PhotoStore
 import com.mahfazty.smart.ui.components.SegmentedSwitch
@@ -308,6 +310,7 @@ fun AccountDialog(
 // عملية له/عليه مع مواد الفاتورة وصورة الإيصال
 // =====================================================================
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OperationDialog(
     title: String,
