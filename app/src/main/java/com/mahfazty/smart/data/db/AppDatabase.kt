@@ -11,9 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         TransactionEntity::class, GoalEntity::class, SavingsEntity::class,
         SettingEntity::class, ClientEntity::class, AccountEntity::class,
-        OperationEntity::class, TransferEntity::class,
+        OperationEntity::class, TransferEntity::class, AuditLogEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,6 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
     abstract fun operationDao(): OperationDao
     abstract fun transferDao(): TransferDao
+    abstract fun auditLogDao(): AuditLogDao
 
     companion object {
         @Volatile
@@ -48,6 +49,28 @@ abstract class AppDatabase : RoomDatabase() {
                     db.execSQL("ALTER TABLE operations ADD COLUMN isInvoice INTEGER NOT NULL DEFAULT 0")
                     db.execSQL("ALTER TABLE operations ADD COLUMN invoiceRef TEXT")
                     db.execSQL("ALTER TABLE operations ADD COLUMN invoiceDelivered INTEGER NOT NULL DEFAULT 0")
+                }
+            },
+            /**
+             * v2 → v3 (حزمة الأمان v2.7.0):
+             *   - جدول audit_log جديد: سجل التدقيق للتعديلات والحذف (sec-6)
+             *   - operations.dueDate: تاريخ استحقاق الدين (data-1)
+             *   - operations.currency: عملة العملية المثبتة وقت التسجيل (data-4)
+             *   - clients.status: حالة العميل نشط/موقوف/قائمة سوداء (data-3)
+             * الأعمدة الجديدة اختيارية (أو بافتراضي آمن) — كل البيانات القديمة تبقى كما هي.
+             */
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS audit_log (" +
+                            "id INTEGER NOT NULL PRIMARY KEY, " +
+                            "ts INTEGER NOT NULL, " +
+                            "action TEXT NOT NULL, " +
+                            "details TEXT NOT NULL)"
+                    )
+                    db.execSQL("ALTER TABLE operations ADD COLUMN dueDate INTEGER")
+                    db.execSQL("ALTER TABLE operations ADD COLUMN currency TEXT")
+                    db.execSQL("ALTER TABLE clients ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
                 }
             },
         )

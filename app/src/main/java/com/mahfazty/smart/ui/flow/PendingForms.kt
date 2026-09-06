@@ -20,6 +20,9 @@ data class PendingClientOp(
     val receiptPath: String?,
     val isInvoice: Boolean = false,
     val invoiceRef: String? = null,
+    /** حقول v2.7.0 — المسودة تحافظ على الاستحقاق والعملة حتى بعد الشحن (data-1/data-4) */
+    val dueDate: Long? = null,
+    val currency: String? = null,
     val editing: ClientOperation? = null,
 ) {
     fun toInitial(): ClientOperation {
@@ -36,6 +39,8 @@ data class PendingClientOp(
             isInvoice = isInvoice,
             invoiceRef = invoiceRef,
             invoiceDelivered = base?.invoiceDelivered ?: false,
+            dueDate = base?.dueDate ?: dueDate,
+            currency = base?.currency ?: currency,
         )
     }
 }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- إصلاح sec-1: استثناء قاعدة البيانات وصور العملاء من النسخ الاحتياطي السحابي
+     ومن نقل الجهاز (Android 12+) — بيانات الديون والأرصدة الحقيقية تبقى على الجهاز فقط -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="mahfazty.db" />
+        <exclude domain="file" path="photos/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="mahfazty.db" />
+        <exclude domain="file" path="photos/" />
+    </device-transfer>
+</data-extraction-rules>

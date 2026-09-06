@@ -2,6 +2,7 @@ package com.mahfazty.smart.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -98,6 +99,13 @@ class SettingsViewModel(
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
 
+    /** وقت آخر نسخة احتياطية (null = لم تعمل قط) — أساس تذكير النسخ (إصلاح data-5) */
+    val lastBackupTs: StateFlow<Long?> = settingsRepo.lastBackupTs
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** قفل تبويب العملاء (إصلاح sec-2) — التحقق الفعلي بالبصمة/رمز الجهاز في MainViewModel */
+    fun setLockClients(enabled: Boolean) = viewModelScope.launch { settingsRepo.set("lock_clients", enabled.toString()) }
+
     private val _checks = MutableSharedFlow<List<CheckResult>>(extraBufferCapacity = 1)
     val checks: kotlinx.coroutines.flow.SharedFlow<List<CheckResult>> = _checks.asSharedFlow()
 
@@ -134,6 +142,8 @@ class SettingsViewModel(
             file.writeText(json, Charsets.UTF_8)
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             shareFile(context, uri, "application/json", "نسخة احتياطية محفظتي الذكية")
+            // إصلاح data-5: تسجيل وقت النجاح ليزول شريط التذكير بعد أسبوع
+            settingsRepo.setLastBackupTs(System.currentTimeMillis())
             _toast.emit("تم إنشاء النسخة الاحتياطية ✅")
         }.onFailure { _toast.emit("تعذر إنشاء النسخة الاحتياطية") }
     }
@@ -337,8 +347,34 @@ fun SettingsScreen(
                 }
             }
 
+            // ===== الخصوصية والأمان =====
+            // إصلاح sec-2: قفل تبويب العملاء بالبصمة أو رمز الجهاز
+            SettingsSectionTitle("🔐 الخصوصية والأمان", 2)
+            SettingRow("🔒 قفل تبويب العملاء", "يتطلب بصمة أو رمز الجهاز قبل عرض بيانات العملاء") {
+                Switch(
+                    checked = settings.lockClients,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            // لا نفعّل القفل على جهاز بلا وسيلة تحقق حقيقية — فلا قفل بلا تفكيك
+                            val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                            if (BiometricManager.from(context).canAuthenticate(authenticators)
+                                == BiometricManager.BIOMETRIC_SUCCESS
+                            ) {
+                                vm.setLockClients(true)
+                            } else {
+                                snackbar.showSnackbar("هذا الجهاز لا يدعم البصمة أو رمز القفل — لا يمكن تفعيل القفل")
+                            }
+                        } else {
+                            vm.setLockClients(false)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary),
+                )
+            }
+
             // ===== الحدود الشهرية =====
-            SettingsSectionTitle("🚧 الحدود الشهرية", 2)
+            SettingsSectionTitle("🚧 الحدود الشهرية", 3)
             Text(
                 "ضع حد لكل فئة وسينبهك التطبيق عند تجاوزه",
                 style = MaterialTheme.typography.bodySmall,
@@ -360,7 +396,7 @@ fun SettingsScreen(
             }
 
             // ===== الفئات المخصصة =====
-            SettingsSectionTitle("🏷️ فئاتي المخصصة", 3)
+            SettingsSectionTitle("🏷️ فئاتي المخصصة", 4)
             CustomCategoriesSection(
                 kind = CategoryKind.EXPENSE,
                 items = settings.customExpense,
@@ -375,7 +411,35 @@ fun SettingsScreen(
             )
 
             // ===== إدارة البيانات =====
-            SettingsSectionTitle("💾 إدارة البيانات", 4)
+            SettingsSectionTitle("💾 إدارة البيانات", 5)
+            // إصلاح data-5: شريط تذكير — لم تعمل نسخة بعد أو آخرها قبل أسبوع
+            val lastBackupTs by vm.lastBackupTs.collectAsStateWithLifecycle()
+            val nowMs = System.currentTimeMillis()
+            if (lastBackupTs == null || nowMs - lastBackupTs > 7 * 86_400_000L) {
+                val daysAgo = lastBackupTs?.let { ((nowMs - it) / 86_400_000L).toInt() }
+                AppCard(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("⚠️", fontSize = 18.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                if (lastBackupTs == null) "لم تعمل نسخة احتياطية بعد"
+                                else "آخر نسخة احتياطية قبل ${daysAgo} يوم",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = LocalAppColors.current.red,
+                            )
+                            Text(
+                                "نسخة أسبوعية تحميك من فقدان بياناتك — خاصة قبل التحديثات أو تغيير الجهاز.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = LocalAppColors.current.muted,
+                            )
+                        }
+                    }
+                }
+            }
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 DataButton("💾 عمل نسخة احتياطية", MaterialTheme.colorScheme.primary) { vm.exportJson(context) }
                 DataButton("📊 تصدير CSV", MaterialTheme.colorScheme.primary) { vm.exportCsv(context) }
@@ -389,7 +453,7 @@ fun SettingsScreen(
             }
 
             // ===== حول التطبيق =====
-            SettingsSectionTitle("ℹ️ حول التطبيق", 5)
+            SettingsSectionTitle("ℹ️ حول التطبيق", 6)
             AppCard(Modifier.padding(horizontal = 20.dp)) {
                 Column(
                     Modifier
@@ -411,7 +475,7 @@ fun SettingsScreen(
                         ) { Text("💰", fontSize = 30.sp) }
                     }
                     Spacer(Modifier.height(10.dp))
-                    Text("محفظتي الذكية v2.5.1", style = MaterialTheme.typography.titleMedium)
+                    Text("محفظتي الذكية v2.7.0", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "محاسبك الشخصي الذكي\nمصمم بعناية في اليمن 🇾🇪",
                         style = MaterialTheme.typography.bodySmall,

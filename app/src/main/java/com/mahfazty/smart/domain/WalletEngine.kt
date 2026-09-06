@@ -102,6 +102,13 @@ object WalletEngine {
     fun reverseOpFromReal(realBalance: Double, type: OpType, amount: Double): Double =
         if (type == OpType.DEBT) realBalance + amount else realBalance - amount
 
+    /**
+     * إصلاح fin-1: فحص أن عكس أثر العملية على الرصيد الحقيقي لن يجعله سالباً.
+     * القيمة الفارغة = آمن، وإلا WalletError.UnsafeRealDelete.
+     */
+    fun checkReverseOpKeepsNonNegative(realBalance: Double, type: OpType, amount: Double): WalletError? =
+        if (reverseOpFromReal(realBalance, type, amount) < -0.000001) WalletError.UnsafeRealDelete else null
+
     fun clientTotal(accounts: List<ClientAccount>, opsByAccount: (Long) -> List<ClientOperation>): Double =
         accounts.sumOf { opsBalance(opsByAccount(it.id)) }
 

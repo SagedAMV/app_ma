@@ -21,12 +21,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -62,21 +65,76 @@ import com.mahfazty.smart.ui.viewmodels.InsufficientRealData
 
 // =====================================================================
 // عميل (إضافة/تعديل) مع صورة
+// إصلاحات: sec-4 (تحقق من الهاتف) • sec-5 (حدود الحقول) • act-5 (كشف التكرار)
+//          act-6 (خطأ حفظ الصورة) • data-2 (جهات الاتصال) • data-3 (الحالة)
 // =====================================================================
 
 @Composable
 fun ClientDialog(
     title: String,
     initial: Client? = null,
+    /** عملاء قائمون — لكشف التكرار (إصلاح act-5) */
+    existing: List<Client> = emptyList(),
+    /** فتح عميل موجود بدل إنشاء مكرر (إصلاح act-5) */
+    onOpenExisting: (Long) -> Unit = {},
     onDismiss: () -> Unit,
-    onSave: (String, String?, String?) -> Unit,
+    onSave: (String, String?, String?, String) -> Unit, // name, phone, photo, status
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var phone by remember { mutableStateOf(initial?.phone ?: "") }
     var photoPath by remember { mutableStateOf(initial?.photoPath) }
+    var photoError by remember { mutableStateOf<String?>(null) } // إصلاح act-6
+    var status by remember {
+        mutableStateOf(initial?.status ?: com.mahfazty.smart.domain.model.ClientStatus.ACTIVE)
+    }
+    var saveHint by remember { mutableStateOf<String?>(null) }
+    var duplicate by remember { mutableStateOf<Client?>(null) }
+
+    // إصلاح act-6: فشل حفظ الصورة لم يعد صامتاً — رسالة واضحة للمستخدم
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { PhotoStore.save(context, it, "client")?.let { p -> photoPath = p } }
+        uri?.let {
+            val r = PhotoStore.save(context, it, "client")
+            if (r.path != null) {
+                photoPath = r.path
+                photoError = null
+            } else {
+                photoError = r.error
+            }
+        }
+    }
+
+    // إصلاح data-2: استيراد من جهات الاتصال — اختيار مفرد (ACTION_PICK) بلا إذن READ_CONTACTS
+    val contactPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { uri ->
+        uri?.let { picked ->
+            runCatching {
+                var contactId = -1L
+                var contactName = ""
+                context.contentResolver.query(
+                    picked,
+                    arrayOf(android.provider.ContactsContract.Contacts._ID, android.provider.ContactsContract.Contacts.DISPLAY_NAME),
+                    null, null, null,
+                )?.use { c ->
+                    if (c.moveToFirst()) {
+                        contactId = c.getLong(0)
+                        contactName = c.getString(1)
+                    }
+                }
+                if (contactId > 0) {
+                    name = contactName
+                    // أول رقم هاتف مسجل للعميل
+                    context.contentResolver.query(
+                        android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER),
+                        "${android.provider.ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                        arrayOf(contactId.toString()),
+                        null,
+                    )?.use { c ->
+                        if (c.moveToFirst()) phone = c.getString(0)
+                    }
+                }
+            }
+        }
     }
 
     AppSheet(title = title, onDismiss = onDismiss) {
@@ -101,13 +159,74 @@ fun ClientDialog(
                 color = LocalAppColors.current.muted,
                 modifier = Modifier.padding(top = 6.dp),
             )
+            photoError?.let { err ->
+                Text(
+                    "⚠️ $err",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalAppColors.current.red,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
             Spacer(Modifier.height(12.dp))
-            AppTextField(name, { name = it }, "الاسم *")
+            AppTextField(name, { name = it }, "الاسم *", maxLength = 50)
             Spacer(Modifier.height(10.dp))
-            AppTextField(phone, { phone = it }, "هاتف (اختياري)")
-            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // إصلاح sec-5: حد 20 حرفاً • إصلاح sec-4: لوحة رقمية + تحقق عند الحفظ
+                AppTextField(
+                    phone, { phone = it }, "هاتف (اختياري)",
+                    modifier = Modifier.weight(1f),
+                    maxLength = 20,
+                    phoneKeypad = true,
+                )
+                Spacer(Modifier.width(8.dp))
+                androidx.compose.material3.TextButton(
+                    onClick = { contactPicker.launch(null) },
+                ) { Text("👤 جهاتي", fontSize = 12.sp) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("حالة العميل", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(6.dp))
+            SegmentedSwitch(
+                options = listOf(
+                    com.mahfazty.smart.domain.model.ClientStatus.ACTIVE to "🟢 نشط",
+                    com.mahfazty.smart.domain.model.ClientStatus.STOPPED to "🟠 موقوف",
+                    com.mahfazty.smart.domain.model.ClientStatus.BLOCKED to "🔴 قائمة سوداء",
+                ),
+                selected = status,
+                onSelect = { status = it },
+                selectedColor = when (status) {
+                    com.mahfazty.smart.domain.model.ClientStatus.STOPPED -> Color(0xFFE17055)
+                    com.mahfazty.smart.domain.model.ClientStatus.BLOCKED -> LocalAppColors.current.red
+                    else -> LocalAppColors.current.green
+                },
+            )
+            Spacer(Modifier.height(14.dp))
+            if (saveHint != null) {
+                Text(saveHint!!, color = LocalAppColors.current.red, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(6.dp))
+            }
             Button(
-                onClick = { if (name.isNotBlank()) onSave(name.trim(), phone.ifBlank { null }, photoPath) },
+                onClick = {
+                    // إصلاح sec-4: تحقق من صيغة الهاتف قبل الحفظ
+                    val digits = phone.filter { it.isDigit() }
+                    when {
+                        name.isBlank() -> saveHint = "اكتب اسم العميل"
+                        phone.isNotBlank() &&
+                            !(phone.all { it.isDigit() || it in " +()-/#" } && digits.length in 6..15) ->
+                            saveHint = "رقم الهاتف غير صالح: أرقام فقط (6-15 رقماً) مع رمز دولة اختياري"
+                        else -> {
+                            saveHint = null
+                            // إصلاح act-5: تنبيه التكرار (اسم أو هاتف مطابق) بدل منع صارم
+                            val dup = existing.firstOrNull { c ->
+                                c.id != (initial?.id ?: -1L) &&
+                                    (c.name.trim().equals(name.trim(), ignoreCase = true) ||
+                                        (digits.isNotBlank() && c.phone?.filter { d -> d.isDigit() } == digits))
+                            }
+                            if (dup != null) duplicate = dup
+                            else onSave(name.trim(), phone.ifBlank { null }, photoPath, status)
+                        }
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .bounceClick(),
@@ -115,6 +234,22 @@ fun ClientDialog(
             ) { Text("حفظ العميل ✅") }
             Spacer(Modifier.height(8.dp))
         }
+    }
+
+    duplicate?.let { dup ->
+        ConfirmDialog(
+            title = "عميل مكرر؟",
+            message = "يوجد عميل بالفعل: ${dup.name}${dup.phone?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""}\nإن أنشأت سجلاً جديداً ستتوزع الديون على أكثر من حساب.",
+            confirmText = "إنشاء جديد رغم ذلك",
+            danger = false,
+            extraText = "فتح العميل الموجود",
+            onExtra = { duplicate = null; onOpenExisting(dup.id) },
+            onConfirm = {
+                duplicate = null
+                onSave(name.trim(), phone.ifBlank { null }, photoPath, status)
+            },
+            onDismiss = { duplicate = null },
+        )
     }
 }
 
@@ -180,7 +315,11 @@ fun OperationDialog(
     realBalance: Double,
     initial: ClientOperation? = null,
     onDismiss: () -> Unit,
-    onSave: (OpType, Double, String?, List<MaterialItem>, String?, Boolean, String?) -> Unit,
+    /**
+     * onSave: type, amount, note, materials, receipt, isInvoice, invoiceRef,
+     *         dueDate (إصلاح data-1), pinnedCurrency (إصلاح data-4)
+     */
+    onSave: (OpType, Double, String?, List<MaterialItem>, String?, Boolean, String?, Long?, String) -> Unit,
 ) {
     val context = LocalContext.current
     var type by remember { mutableStateOf(initial?.type ?: OpType.DEBT) }
@@ -193,12 +332,25 @@ fun OperationDialog(
     }
     var showMaterials by remember { mutableStateOf(initial?.materials?.isNotEmpty() == true) }
     var receiptPath by remember { mutableStateOf(initial?.receiptPath) }
+    var receiptError by remember { mutableStateOf<String?>(null) } // إصلاح act-6
     // نظام «الفواتير وحالة التسليم»
     var isInvoice by remember { mutableStateOf(initial?.isInvoice ?: false) }
     var invoiceRef by remember { mutableStateOf(initial?.invoiceRef ?: "") }
+    // إصلاح data-1: تاريخ استحقاق (ديون فقط) • إصلاح data-4: عملة مثبتة وقت التسجيل
+    var dueDate by remember { mutableStateOf(initial?.dueDate) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val pinnedCurrency = initial?.currency ?: currency
     var saveHint by remember { mutableStateOf<String?>(null) }
     val receiptPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { PhotoStore.save(context, it, "receipt")?.let { p -> receiptPath = p } }
+        uri?.let {
+            val r = PhotoStore.save(context, it, "receipt")
+            if (r.path != null) {
+                receiptPath = r.path
+                receiptError = null
+            } else {
+                receiptError = r.error
+            }
+        }
     }
 
     AppSheet(title = title, onDismiss = onDismiss) {
@@ -277,7 +429,7 @@ fun OperationDialog(
                 }
             }
             Spacer(Modifier.height(10.dp))
-            AppTextField(note, { note = it }, "البيان / الملاحظة")
+            AppTextField(note, { note = it }, "البيان / الملاحظة", maxLength = 200)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(
@@ -299,6 +451,14 @@ fun OperationDialog(
                         shape = RoundedCornerShape(12.dp),
                     ) { Text("إزالة", fontSize = 12.sp, color = LocalAppColors.current.red) }
                 }
+            }
+            receiptError?.let { err ->
+                Text(
+                    "⚠️ $err",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalAppColors.current.red,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
             Spacer(Modifier.height(12.dp))
             // ===== نظام «الفواتير وحالة التسليم» =====
@@ -333,13 +493,54 @@ fun OperationDialog(
             }
             if (isInvoice) {
                 Spacer(Modifier.height(8.dp))
-                AppTextField(invoiceRef, { invoiceRef = it }, "رقم / وصف الفاتورة *")
+                AppTextField(invoiceRef, { invoiceRef = it }, "رقم / وصف الفاتورة *", maxLength = 100)
                 Text(
                     "تُظهر العملية شارة 🧾 برتقالية حتى تُسلَّم (بالضغط المطول) فتصبح ✅📑.",
                     style = MaterialTheme.typography.labelSmall,
                     color = LocalAppColors.current.muted,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+            }
+            // ===== إصلاح data-1: تاريخ استحقاق الدين (اختياري) =====
+            if (type == OpType.DEBT) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "📅 تاريخ الاستحقاق",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showDatePicker = true }
+                            .padding(vertical = 6.dp),
+                    )
+                    Text(
+                        if (dueDate != null) com.mahfazty.smart.domain.Dates.short(dueDate!!) else "اختياري",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (dueDate != null) MaterialTheme.colorScheme.primary else LocalAppColors.current.muted,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showDatePicker = true }
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                    )
+                    if (dueDate != null) {
+                        Text(
+                            "✕",
+                            color = LocalAppColors.current.red,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { dueDate = null }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                        )
+                    }
+                }
             }
             Spacer(Modifier.height(10.dp))
             Text(
@@ -367,9 +568,12 @@ fun OperationDialog(
                         isInvoice && invoiceRef.isBlank() -> saveHint = "اكتب رقم أو وصف الفاتورة (إجباري) قبل الحفظ"
                         else -> {
                             saveHint = null
+                            // إصلاح data-1: الاستحقاق للديون فقط • data-4: تثبيت عملة التسجيل
                             onSave(
                                 type, amt, note.ifBlank { null }, materials.toList(), receiptPath,
                                 isInvoice, invoiceRef.trim().ifBlank { null },
+                                if (type == OpType.DEBT) dueDate else null,
+                                pinnedCurrency,
                             )
                         }
                     }
@@ -380,6 +584,29 @@ fun OperationDialog(
                 shape = RoundedCornerShape(14.dp),
             ) { Text("حفظ العملية ✅") }
             Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    // ===== إصلاح data-1: منتقي تاريخ الاستحقاق =====
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dueDate)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { dueDate = it }
+                        showDatePicker = false
+                    },
+                ) { Text("حفظ") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showDatePicker = false },
+                ) { Text("إلغاء") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
         }
     }
 }
@@ -838,5 +1065,163 @@ private fun RealSuggestionRow(title: String, subtitle: String, buttonText: Strin
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(10.dp),
         ) { Text(buttonText, fontSize = 11.sp) }
+    }
+}
+
+// =====================================================================
+// تسوية الرصيد الحقيقي (إصلاح fin-4) — تصحيح محمي بسبب إلزامي يُسجَّل في التدقيق
+// =====================================================================
+
+@Composable
+fun AdjustRealDialog(
+    currency: String,
+    currentReal: Double,
+    onDismiss: () -> Unit,
+    onSave: (Double, String) -> Unit,
+) {
+    var amount by remember { mutableStateOf(Money.input(currentReal)) }
+    var reason by remember { mutableStateOf("") }
+    var hint by remember { mutableStateOf<String?>(null) }
+
+    AppSheet(title = "⚖️ تسوية الرصيد الحقيقي", onDismiss = onDismiss) {
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            Text(
+                "الرصيد الحالي: ${Money.fmt(currentReal)} $currency",
+                style = MaterialTheme.typography.labelMedium,
+                color = LocalAppColors.current.muted,
+            )
+            Spacer(Modifier.height(10.dp))
+            AmountField(amount, { amount = it }, "الرصيد الصحيح", currency)
+            Spacer(Modifier.height(10.dp))
+            AppTextField(reason, { reason = it }, "سبب التسوية (إلزامي) — مثل: خطأ إدخال سابق", maxLength = 150)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "تُنشر التسوية مباشرة في «سجل التعديلات» مع القيمة القديمة والجديدة والسبب.",
+                style = MaterialTheme.typography.labelSmall,
+                color = LocalAppColors.current.muted,
+            )
+            Spacer(Modifier.height(8.dp))
+            if (hint != null) {
+                Text(hint!!, color = LocalAppColors.current.red, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(6.dp))
+            }
+            Button(
+                onClick = {
+                    val amt = Money.parse(amount)
+                    when {
+                        amt < 0 || amt.isNaN() -> hint = "أدخل رقماً صحيحاً (صفر أو أكبر)"
+                        reason.isBlank() -> hint = "اكتب سبب التسوية — يُسجَّل في سجل التدقيق"
+                        else -> onSave(amt, reason.trim())
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.red),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("تنفيذ التسوية ⚖️") }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+// =====================================================================
+// خيارات مشاركة كشف الحساب (إصلاح act-4)
+// =====================================================================
+
+@Composable
+fun StatementOptionsDialog(
+    opCount: Int,
+    onDismiss: () -> Unit,
+    onShareLast10: () -> Unit,
+    onShareFull: () -> Unit,
+    onExportCsv: () -> Unit,
+) {
+    AppSheet(title = "🧾 كشف الحساب", onDismiss = onDismiss) {
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            Button(
+                onClick = onShareLast10,
+                modifier = Modifier.fillMaxWidth().bounceClick(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("💬 واتساب — آخر 10 عمليات", fontSize = 13.sp) }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onShareFull,
+                modifier = Modifier.fillMaxWidth().bounceClick(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("💬 واتساب — الكشف الكامل ($opCount عملية)", fontSize = 13.sp) }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onExportCsv,
+                modifier = Modifier.fillMaxWidth().bounceClick(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("📊 تصدير CSV — كشف كامل قابل للفتح في Excel", fontSize = 13.sp) }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+// =====================================================================
+// سجل التعديلات (إصلاح sec-6) — من فعل ماذا ومتى
+// =====================================================================
+
+@Composable
+fun AuditLogDialog(
+    entries: List<com.mahfazty.smart.data.AuditLogEntry>,
+    onDismiss: () -> Unit,
+) {
+    AppSheet(title = "📝 سجل التعديلات", onDismiss = onDismiss) {
+        Column(
+            Modifier
+                .padding(horizontal = 20.dp)
+                .height(380.dp),
+        ) {
+            if (entries.isEmpty()) {
+                Text(
+                    "لا توجد تعديلات مسجلة بعد.\nتُسجل هنا: التعديلات، الحذف، الشحن، السحب، التحويل، والتسويات.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalAppColors.current.muted,
+                    modifier = Modifier.padding(vertical = 20.dp),
+                )
+            } else {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    entries.forEach { e ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(e.action, style = MaterialTheme.typography.labelMedium)
+                                Text(e.details, style = MaterialTheme.typography.labelSmall, color = LocalAppColors.current.muted)
+                            }
+                            Text(
+                                com.mahfazty.smart.domain.Dates.dateTime(e.ts),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = LocalAppColors.current.muted,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().bounceClick(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("إغلاق") }
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }

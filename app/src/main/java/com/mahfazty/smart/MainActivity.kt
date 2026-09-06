@@ -1,8 +1,13 @@
 package com.mahfazty.smart
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -36,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -55,6 +61,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mahfazty.smart.ui.screens.AccountOpsScreen
 import com.mahfazty.smart.ui.screens.ClientAccountsScreen
+import com.mahfazty.smart.ui.screens.ClientLockScreen
 import com.mahfazty.smart.ui.screens.ClientsScreen
 import com.mahfazty.smart.ui.screens.GoalsScreen
 import com.mahfazty.smart.ui.screens.HomeScreen
@@ -83,7 +90,11 @@ class MainActivity : ComponentActivity() {
             val mainViewModel: MainViewModel = viewModel(factory = viewModelFactory {
                 initializer {
                     val app = this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as MahfaztyApp
-                    MainViewModel(app.container.walletRepository, app.container.settingsRepository)
+                    MainViewModel(
+                        app.container.walletRepository,
+                        app.container.settingsRepository,
+                        app.container.clientsRepository,
+                    )
                 }
             })
             val settings by mainViewModel.settings.collectAsStateWithLifecycle()
@@ -138,7 +149,26 @@ private val topLevelRoutes = setOf(
 private fun AppRoot(mainViewModel: MainViewModel) {
     val navController = rememberNavController()
     val reduceMotion = rememberReduceMotion()
-    val container = (androidx.compose.ui.platform.LocalContext.current.applicationContext as MahfaztyApp).container
+    val context = LocalContext.current
+    val container = (context.applicationContext as MahfaztyApp).container
+
+    // ===== إصلاح data-1: عند البدء — طلب إذن الإشعارات (أندرويد 13+) ثم فحص ديون مستحقة =====
+    val requestNotifications = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) mainViewModel.checkDueNotifications(context)
+    }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            val granted = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED
+            if (granted) mainViewModel.checkDueNotifications(context)
+            else requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            // قبل أندرويد 13 لا يوجد إذن تشغيل للإشعارات المحلية
+            mainViewModel.checkDueNotifications(context)
+        }
+    }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -399,6 +429,16 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                         scaleOut(tween(220, easing = FastOutLinearInEasing), targetScale = 0.98f)
                 },
             ) {
+                // إصلاح sec-2: قفل تبويب العملاء بالبصمة/رمز الجهاز (عند تفعيله في الإعدادات)
+                val lockEnabled by mainViewModel.lockEnabled.collectAsStateWithLifecycle()
+                val clientsUnlocked by mainViewModel.clientsUnlocked.collectAsStateWithLifecycle()
+                if (lockEnabled && !clientsUnlocked) {
+                    val lockActivity = context as androidx.fragment.app.FragmentActivity
+                    ClientLockScreen { onError ->
+                        mainViewModel.unlockClients(lockActivity, onError)
+                    }
+                    return@composable
+                }
                 val vm: ClientsViewModel = viewModel(factory = viewModelFactory {
                     initializer {
                         val app = this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as MahfaztyApp
@@ -456,9 +496,15 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     },
                 )
                 val state by vm.state.collectAsStateWithLifecycle()
+                val transfers by vm.transfers.collectAsStateWithLifecycle()
+                val deleted by vm.deletedClient.collectAsStateWithLifecycle()
                 ClientAccountsScreen(
                     data = state,
                     toast = vm.toast,
+                    transfers = transfers,
+                    deleted = deleted,
+                    onUndoDeleteClient = vm::undoDeleteClient,
+                    onCloseDeleteResult = vm::closeDeleteResult,
                     onBack = { navController.popBackStack() },
                     onAddAccount = vm::addAccount,
                     onUpdateClient = vm::updateClient,
@@ -526,6 +572,11 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 val cash by vm.cash.collectAsStateWithLifecycle()
                 val savings by vm.savings.collectAsStateWithLifecycle()
                 val goalSources by vm.goalSources.collectAsStateWithLifecycle()
+                val audit by vm.audit.collectAsStateWithLifecycle()
+                val filterQuery by vm.query.collectAsStateWithLifecycle()
+                val filterType by vm.opTypeFilter.collectAsStateWithLifecycle()
+                val filterPeriod by vm.opPeriod.collectAsStateWithLifecycle()
+                val opsContext = LocalContext.current
                 AccountOpsScreen(
                     clientData = clientData,
                     account = account,
@@ -539,7 +590,14 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     cash = cash,
                     savings = savings,
                     goalSources = goalSources,
+                    audit = audit,
                     toast = vm.toast,
+                    filterQuery = filterQuery,
+                    filterType = filterType,
+                    filterPeriod = filterPeriod,
+                    onSetFilterQuery = vm::setQuery,
+                    onSetFilterType = vm::setOpTypeFilter,
+                    onSetFilterPeriod = vm::setOpPeriod,
                     onBack = { navController.popBackStack() },
                     onToggleSelect = vm::toggleSelect,
                     onClearSelection = vm::clearSelection,
@@ -550,6 +608,8 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     onMarkInvoiceDelivered = vm::markInvoiceDelivered,
                     onUpdateAccount = vm::updateAccount,
                     onDeleteAccount = vm::deleteAccount,
+                    onAdjustReal = vm::adjustReal,
+                    onExportCsv = { vm.exportAccountCsv(opsContext) },
                     onFundReal = vm::fundReal,
                     onWithdrawReal = vm::withdrawReal,
                     onTransferReal = vm::transferReal,

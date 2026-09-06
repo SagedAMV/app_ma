@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- إصلاح sec-1: نفس الاستثناءات لأجهزة ما قبل Android 12 (fullBackupContent) -->
+<full-backup-content>
+    <exclude domain="database" path="mahfazty.db" />
+    <exclude domain="file" path="photos/" />
+</full-backup-content>

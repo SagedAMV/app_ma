@@ -86,10 +86,14 @@ import com.mahfazty.smart.ui.dialogs.InsufficientRealSheet
 import com.mahfazty.smart.ui.dialogs.OperationDialog
 import com.mahfazty.smart.ui.dialogs.TransferRealDialog
 import com.mahfazty.smart.ui.dialogs.WithdrawRealDialog
+import com.mahfazty.smart.ui.dialogs.AdjustRealDialog
+import com.mahfazty.smart.ui.dialogs.AuditLogDialog
+import com.mahfazty.smart.ui.dialogs.StatementOptionsDialog
 import com.mahfazty.smart.ui.theme.LocalAppColors
 import com.mahfazty.smart.ui.util.shareViaWhatsApp
 import com.mahfazty.smart.ui.viewmodels.ClientsUiState
 import com.mahfazty.smart.ui.viewmodels.InsufficientRealData
+import java.util.Calendar
 
 /** لون شارات الفواتير غير المسلمة (برتقالي) — نظام «الفواتير وحالة التسليم» */
 private val InvoiceOrange = Color(0xFFF57C00)
@@ -101,13 +105,24 @@ private val InvoiceOrange = Color(0xFFF57C00)
 @Composable
 fun ClientsScreen(
     state: ClientsUiState,
-    toast: kotlinx.coroutines.flow.SharedFlow<String>,
+    toast: kotlinx.coroutines.flow.SharedFlow<com.mahfazty.smart.ui.viewmodels.ToastMsg>,
     onSetQuery: (String) -> Unit,
-    onAddClient: (String, String?, String?) -> Unit,
+    onAddClient: (String, String?, String?, String) -> Unit,
     onOpenClient: (Long) -> Unit,
 ) {
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(Unit) { toast.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) {
+        toast.collect { msg ->
+            if (msg.actionLabel != null && msg.onAction != null) {
+                snackbar.showSnackbar(
+                    message = msg.text,
+                    actionLabel = msg.actionLabel,
+                    withAction = true,
+                    duration = SnackbarDuration.Long,
+                ) { msg.onAction?.invoke() }
+            } else snackbar.showSnackbar(msg.text)
+        }
+    }
     var showAdd by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -190,10 +205,12 @@ fun ClientsScreen(
     if (showAdd) {
         ClientDialog(
             title = "إضافة عميل",
+            existing = state.clients.map { it.client },
+            onOpenExisting = onOpenClient,
             onDismiss = { showAdd = false },
-            onSave = { name, phone, photo ->
+            onSave = { name, phone, photo, status ->
                 showAdd = false
-                onAddClient(name, phone, photo)
+                onAddClient(name, phone, photo, status)
             },
         )
     }
@@ -224,7 +241,37 @@ private fun ClientRow(c: ClientWithData, onClick: () -> Unit) {
             PhotoAvatar(c.client.photoPath, c.client.name.firstOrNull()?.toString() ?: "ع")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(c.client.name, style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        c.client.name,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                    )
+                    // إصلاح data-3: شارة حالة العميل (نشط/موقوف/قائمة سوداء)
+                    if (c.client.status != com.mahfazty.smart.domain.model.ClientStatus.ACTIVE) {
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (c.client.status == com.mahfazty.smart.domain.model.ClientStatus.BLOCKED)
+                                        LocalAppColors.current.red.copy(alpha = 0.15f)
+                                    else Color(0xFFE17055).copy(alpha = 0.18f),
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                "${com.mahfazty.smart.domain.model.ClientStatus.icon(c.client.status)}" +
+                                    " ${com.mahfazty.smart.domain.model.ClientStatus.label(c.client.status)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (c.client.status == com.mahfazty.smart.domain.model.ClientStatus.BLOCKED)
+                                    LocalAppColors.current.red
+                                else Color(0xFFE17055),
+                            )
+                        }
+                    }
+                }
                 Text(
                     "${c.client.phone ?: "بدون هاتف"} • ${c.accounts.size} حساب",
                     style = MaterialTheme.typography.bodySmall,
@@ -256,7 +303,13 @@ private fun ClientRow(c: ClientWithData, onClick: () -> Unit) {
 @Composable
 fun ClientAccountsScreen(
     data: ClientWithData?,
-    toast: kotlinx.coroutines.flow.SharedFlow<String>,
+    toast: kotlinx.coroutines.flow.SharedFlow<com.mahfazty.smart.ui.viewmodels.ToastMsg>,
+    /** سجل التحويلات — لإظهار أثر الحذف في تأكيد الحذف (إصلاح fin-3) */
+    transfers: List<TransferDisplay>,
+    /** نتيجة حذف العميل (لوحة تراجع/عودة — إصلاح act-2) */
+    deleted: com.mahfazty.smart.ui.viewmodels.ClientAccountsViewModel.DeletedClientInfo?,
+    onUndoDeleteClient: () -> Unit,
+    onCloseDeleteResult: () -> Unit,
     onBack: () -> Unit,
     onAddAccount: (String, String) -> Unit,
     onUpdateClient: (Client) -> Unit,
@@ -266,7 +319,18 @@ fun ClientAccountsScreen(
     onOpenAccount: (Long) -> Unit,
 ) {
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(Unit) { toast.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) {
+        toast.collect { msg ->
+            if (msg.actionLabel != null && msg.onAction != null) {
+                snackbar.showSnackbar(
+                    message = msg.text,
+                    actionLabel = msg.actionLabel,
+                    withAction = true,
+                    duration = SnackbarDuration.Long,
+                ) { msg.onAction?.invoke() }
+            } else snackbar.showSnackbar(msg.text)
+        }
+    }
     var showAddAccount by remember { mutableStateOf(false) }
     var editingClient by remember { mutableStateOf(false) }
     var editingAccount by remember { mutableStateOf<ClientAccount?>(null) }
@@ -274,6 +338,48 @@ fun ClientAccountsScreen(
     var deletingAccount by remember { mutableStateOf<ClientAccount?>(null) }
 
     val client = data?.client
+
+    // ===== إصلاح act-2: لوحة نتيجة حذف العميل مع تراجع حقيقي =====
+    if (deleted != null) {
+        Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { _ ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text("🗑️", fontSize = 48.sp)
+                Spacer(Modifier.height(12.dp))
+                Text("تم حذف «${deleted.name}»", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "حُذف مع كل حساباته وعملياته. يمكنك التراجع خلال ثوانٍ.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalAppColors.current.muted,
+                )
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = onUndoDeleteClient,
+                    modifier = Modifier.fillMaxWidth().bounceClick(),
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("↩️ تراجع — استعادة العميل") }
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        onCloseDeleteResult()
+                        onBack()
+                    },
+                    modifier = Modifier.fillMaxWidth().bounceClick(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LocalAppColors.current.red,
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("العودة إلى قائمة العملاء") }
+            }
+        }
+        return
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -389,9 +495,9 @@ fun ClientAccountsScreen(
             title = "تعديل العميل",
             initial = client,
             onDismiss = { editingClient = false },
-            onSave = { name, phone, photo ->
+            onSave = { name, phone, photo, status ->
                 editingClient = false
-                onUpdateClient(client.copy(name = name, phone = phone, photoPath = photo))
+                onUpdateClient(client.copy(name = name, phone = phone, photoPath = photo, status = status))
             },
         )
     }
@@ -406,18 +512,49 @@ fun ClientAccountsScreen(
             },
         )
     }
+    // إصلاح fin-2/fin-3: تحذير صريح بالمبلغ الحقيقي المتبقي + أثر الحذف على سجل التحويلات
     if (deletingClient && client != null) {
+        val realTotal = data?.accounts?.sumOf { it.account.realBalance } ?: 0.0
+        val myAccountIds = data?.accounts?.map { it.account.id }?.toSet() ?: emptySet()
+        val transferCount = transfers.count {
+            it.transfer.fromAccountId in myAccountIds || it.transfer.toAccountId in myAccountIds
+        }
+        val msg = buildString {
+            append("سيُحذف العميل وكل حساباته وعملياته نهائياً.")
+            if (realTotal > 0) {
+                append("\n\n⚠️ ⚠️ تحذير: يحتوي حساباته رصيدًا حقيقيًا متبقيًا قدره ${Money.fmt(realTotal)}.")
+                append("\nسيختفي هذا المبلغ من التتبع نهائيًا دون عودة تلقائية للبنك أو الكاش.")
+                append("\nاسحبه أولاً من شاشة الحساب إن أردت استرداده.")
+            }
+            if (transferCount > 0) {
+                append("\n\nلديه $transferCount تحويل رصيد سابق — ستبقى في سجل التحويلات باسم «عميل محذوف».")
+            }
+        }
         ConfirmDialog(
             title = "حذف العميل؟",
-            message = "سيُحذف العميل وكل حساباته وعملياته نهائياً.",
-            onConfirm = { deletingClient = false; onDeleteClient(client.id); onBack() },
+            message = msg,
+            onConfirm = { deletingClient = false; onDeleteClient(client.id) },
             onDismiss = { deletingClient = false },
         )
     }
     deletingAccount?.let { acc ->
+        val transferCount = transfers.count {
+            it.transfer.fromAccountId == acc.id || it.transfer.toAccountId == acc.id
+        }
+        val msg = buildString {
+            append("سيُحذف الحساب وكل عملياته.")
+            if (acc.realBalance > 0) {
+                append("\n\n⚠️ ⚠️ تحذير: يحتوي رصيدًا حقيقيًا متبقيًا قدره ${Money.fmt(acc.realBalance)}.")
+                append("\nسيختفي هذا المبلغ من التتبع نهائيًا دون عودة للبنك أو الكاش.")
+                append("\nاسحبه أولاً إن أردت استرداده.")
+            }
+            if (transferCount > 0) {
+                append("\n\nلديه $transferCount تحويل سابق — ستبقى في سجل التحويلات باسم «حساب محذوف».")
+            }
+        }
         ConfirmDialog(
             title = "حذف الحساب؟",
-            message = "سيُحذف الحساب وكل عملياته.",
+            message = msg,
             onConfirm = { deletingAccount = null; onDeleteAccount(acc.id) },
             onDismiss = { deletingAccount = null },
         )
@@ -472,6 +609,21 @@ private fun AccountRow(acc: AccountWithOps, onClick: () -> Unit) {
 // 3) شاشة عمليات الحساب
 // =====================================================================
 
+/**
+ * تأكيد تنفيذ عملية رصيد حقيقي (إصلاح act-1).
+ * الشحن/السحب/التحويل لم يعد يُنفذ بضغطة واحدة.
+ */
+private sealed class RealBalanceConfirm {
+    data class Fund(val amount: Double, val from: Wallet) : RealBalanceConfirm()
+    data class Withdraw(val amount: Double, val to: Wallet) : RealBalanceConfirm()
+    data class Transfer(
+        val fromClientId: Long,
+        val fromAccountId: Long,
+        val fromAccountName: String,
+        val amount: Double,
+    ) : RealBalanceConfirm()
+}
+
 @Composable
 fun AccountOpsScreen(
     clientData: ClientWithData?,
@@ -486,17 +638,30 @@ fun AccountOpsScreen(
     cash: Double,
     savings: Double,
     goalSources: List<Triple<Long, String, Double>>,
-    toast: kotlinx.coroutines.flow.SharedFlow<String>,
+    /** سجل التدقيق (إصلاح sec-6) */
+    audit: List<com.mahfazty.smart.data.AuditLogEntry>,
+    toast: kotlinx.coroutines.flow.SharedFlow<com.mahfazty.smart.ui.viewmodels.ToastMsg>,
+    // فلاتر البحث في العمليات (إصلاح act-3)
+    filterQuery: String,
+    filterType: com.mahfazty.smart.ui.viewmodels.OpTypeFilter,
+    filterPeriod: com.mahfazty.smart.ui.viewmodels.OpPeriod,
+    onSetFilterQuery: (String) -> Unit,
+    onSetFilterType: (com.mahfazty.smart.ui.viewmodels.OpTypeFilter) -> Unit,
+    onSetFilterPeriod: (com.mahfazty.smart.ui.viewmodels.OpPeriod) -> Unit,
     onBack: () -> Unit,
     onToggleSelect: (Long) -> Unit,
     onClearSelection: () -> Unit,
-    onAddOperation: (OpType, Double, String?, List<com.mahfazty.smart.domain.model.MaterialItem>, String?, Boolean, String?) -> Unit,
+    onAddOperation: (OpType, Double, String?, List<com.mahfazty.smart.domain.model.MaterialItem>, String?, Boolean, String?, Long?, String) -> Unit,
     onUpdateOperation: (ClientOperation) -> Unit,
     onDeleteOperation: (ClientOperation) -> Unit,
     onDeleteSelected: () -> Unit,
     onMarkInvoiceDelivered: (ClientOperation) -> Unit,
     onUpdateAccount: (ClientAccount) -> Unit,
     onDeleteAccount: (Long) -> Unit,
+    /** إصلاح fin-4: تسوية رصيد حقيقي (مبلغ، سبب) */
+    onAdjustReal: (Double, String) -> Unit,
+    /** إصلاح act-4: تصدير كشف كامل CSV */
+    onExportCsv: () -> Unit,
     onFundReal: (Double, Wallet) -> Unit,
     onWithdrawReal: (Double, Wallet) -> Unit,
     onTransferReal: (Long, Long, Long, Long, Double) -> Unit,
@@ -510,7 +675,18 @@ fun AccountOpsScreen(
     val context = LocalContext.current
     val currency = settings.currency
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(Unit) { toast.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) {
+        toast.collect { msg ->
+            if (msg.actionLabel != null && msg.onAction != null) {
+                snackbar.showSnackbar(
+                    message = msg.text,
+                    actionLabel = msg.actionLabel,
+                    withAction = true,
+                    duration = SnackbarDuration.Long,
+                ) { msg.onAction?.invoke() }
+            } else snackbar.showSnackbar(msg.text)
+        }
+    }
 
     var showAddOp by remember { mutableStateOf(false) }
     var editingOp by remember { mutableStateOf<ClientOperation?>(null) }
@@ -524,14 +700,70 @@ fun AccountOpsScreen(
     // نظام «الفواتير وحالة التسليم»: قائمة تسليم الفاتورة + فلتر الفواتير المعلقة
     var invoiceMenuFor by remember { mutableStateOf<ClientOperation?>(null) }
     var pendingInvoicesOnly by remember { mutableStateOf(false) }
+    // إصلاحات v2.7.0
+    var realConfirm by remember { mutableStateOf<RealBalanceConfirm?>(null) } // act-1
+    var showAdjust by remember { mutableStateOf(false) }                      // fin-4
+    var showAudit by remember { mutableStateOf(false) }                        // sec-6
+    var showStatement by remember { mutableStateOf(false) }                    // act-4
 
     val client = clientData?.client
     val acc = account?.account
     val ops = account?.operations ?: emptyList()
     // عداد حي للفواتير غير المسلمة (يُعرض في الفلتر)
     val pendingInvoicesCount = ops.count { it.isInvoice && !it.invoiceDelivered }
-    // الفلتر يعرض الفواتير المعلقة فقط
-    val shownOps = if (pendingInvoicesOnly) ops.filter { it.isInvoice && !it.invoiceDelivered } else ops
+
+    // ===== إصلاح act-3: بحث + فلتر نوع + فلتر مدى زمني =====
+    val now = System.currentTimeMillis()
+    val dayMs = 86_400_000L
+    val periodCutoff: Long? = when (filterPeriod) {
+        com.mahfazty.smart.ui.viewmodels.OpPeriod.ALL -> null
+        com.mahfazty.smart.ui.viewmodels.OpPeriod.MONTH -> Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        com.mahfazty.smart.ui.viewmodels.OpPeriod.THREE_MONTHS -> now - 90 * dayMs
+        com.mahfazty.smart.ui.viewmodels.OpPeriod.YEAR -> now - 365 * dayMs
+    }
+    val queryFiltered = ops.filter { op ->
+        val q = filterQuery.trim()
+        val matchesQuery = q.isEmpty() ||
+            op.note?.contains(q, ignoreCase = true) == true ||
+            op.invoiceRef?.contains(q, ignoreCase = true) == true ||
+            op.materials.any { it.name.contains(q, ignoreCase = true) }
+        val matchesType = when (filterType) {
+            com.mahfazty.smart.ui.viewmodels.OpTypeFilter.All -> true
+            com.mahfazty.smart.ui.viewmodels.OpTypeFilter.Debt -> op.type == OpType.DEBT
+            com.mahfazty.smart.ui.viewmodels.OpTypeFilter.Pay -> op.type == OpType.PAY
+        }
+        val matchesPeriod = periodCutoff == null || op.date >= periodCutoff
+        matchesQuery && matchesType && matchesPeriod
+    }
+    // فواتير معلقة فقط (فلتر أصلي) فوق نتائج البحث
+    val shownOps = if (pendingInvoicesOnly) queryFiltered.filter { it.isInvoice && !it.invoiceDelivered } else queryFiltered
+
+    /** إصلاح act-4: بناء نص الكشف — آخر 10 أو كامل */
+    fun buildStatement(limit: Int): String {
+        val a = account ?: return ""
+        val c = clientData?.client ?: return ""
+        val bal = a.opsBalance
+        val real = a.account.realBalance
+        val sb = StringBuilder()
+        sb.append("🧾 كشف حساب: ${a.account.name} ${a.account.icon}\n")
+        sb.append("👤 العميل: ${c.name}\n")
+        sb.append("💰 الرصيد الحقيقي: ${Money.fmt(real)}\n")
+        if (bal > 0) sb.append("🔴 عليه: ${Money.fmt(bal)}\n")
+        else if (bal < 0) sb.append("🟢 له: ${Money.fmt(-bal)}\n")
+        sb.append(if (limit == Int.MAX_VALUE) "\n📋 كل العمليات (${a.operations.size}):\n" else "\n📋 آخر ${limit} عمليات:\n")
+        a.operations.sortedByDescending { it.date }.take(limit).forEachIndexed { i, op ->
+            sb.append("${i + 1}. ${if (op.type == OpType.DEBT) "عليه" else "له"} ${Money.fmt(op.amount)} ${op.currency ?: ""} - ${op.note ?: ""}".trim())
+            if (op.isInvoice && !op.invoiceRef.isNullOrBlank()) sb.append(" (🧾 ${op.invoiceRef})")
+            if (op.materials.isNotEmpty()) sb.append(" [${op.materials.joinToString(", ") { it.name }}]")
+            sb.append("\n")
+        }
+        sb.append("\nمحفظتي الذكية 💰")
+        return sb.toString()
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -557,6 +789,10 @@ fun AccountOpsScreen(
                     title = acc?.name ?: "تفاصيل",
                     onBack = onBack,
                     actions = {
+                        // إصلاح sec-6: سجل التعديلات
+                        IconButton(onClick = { showAudit = true }) {
+                            Text("📝", fontSize = 18.sp)
+                        }
                         IconButton(onClick = { editingAccount = true }) {
                             Text("✏️", fontSize = 18.sp)
                         }
@@ -600,41 +836,29 @@ fun AccountOpsScreen(
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             RealAction("➕ شحن") { showFund = true }
-                            RealAction("🔄 تحويل") { showTransfer = true }
-                            RealAction("📋 سجل") { showHistory = true }
                             RealAction("➖ سحب") { showWithdraw = true }
+                            RealAction("🔄 تحويل") { showTransfer = true }
+                            // إصلاح fin-4: تسوية محمية بسبب إلزامي
+                            RealAction("⚖️ تسوية") { showAdjust = true }
+                            RealAction("📋 سجل") { showHistory = true }
                         }
                     }
                 }
                 }
             }
             // ===== زر واتساب =====
+            // ===== إصلاح act-4: كشف الحساب — آخر 10 / كامل / تصدير CSV =====
             item {
                 ElasticEntrance(2) {
                 Button(
-                    onClick = {
-                        val text = buildString {
-                            append("🧾 كشف حساب: ${acc?.name ?: ""} ${acc?.icon ?: ""}\n")
-                            append("👤 العميل: ${client?.name ?: ""}\n")
-                            append("💰 الرصيد الحقيقي: ${Money.fmt(acc?.realBalance ?: 0.0)}\n")
-                            val bal = account?.opsBalance ?: 0.0
-                            if (bal > 0) append("🔴 عليه: ${Money.fmt(bal)}\n")
-                            else if (bal < 0) append("🟢 له: ${Money.fmt(-bal)}\n")
-                            append("\n📋 آخر العمليات:\n")
-                            ops.sortedByDescending { it.date }.take(10).forEachIndexed { i, op ->
-                                append("${i + 1}. ${if (op.type == OpType.DEBT) "عليه" else "له"} ${Money.fmt(op.amount)} - ${op.note ?: ""}\n")
-                            }
-                            append("\nمحفظتي الذكية 💰")
-                        }
-                        shareViaWhatsApp(context, text, client?.phone)
-                    },
+                    onClick = { showStatement = true },
                     modifier = Modifier
                         .fillMaxWidth()
                         .bounceClick()
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                     shape = RoundedCornerShape(14.dp),
-                ) { Text("💬 مشاركة كشف الحساب عبر واتساب") }
+                ) { Text("💬 كشف الحساب (واتساب / CSV)") }
                 }
             }
             // ===== شريط الاختيار المتعدد =====
@@ -702,6 +926,60 @@ fun AccountOpsScreen(
             if (ops.isEmpty()) {
                 item { EmptyState("📋", "لا توجد عمليات بعد") }
             } else {
+                // ===== إصلاح act-3: البحث + فلتر النوع + فلتر المدى الزمني =====
+                item {
+                    OutlinedTextField(
+                        value = filterQuery,
+                        onValueChange = onSetFilterQuery,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        placeholder = { Text("🔍 ابحث في العمليات (بيان / رقم فاتورة / صنف)...") },
+                        shape = RoundedCornerShape(14.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = LocalAppColors.current.border,
+                        ),
+                    )
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FilterChip("الكل", filterType == com.mahfazty.smart.ui.viewmodels.OpTypeFilter.All) {
+                            onSetFilterType(com.mahfazty.smart.ui.viewmodels.OpTypeFilter.All)
+                        }
+                        FilterChip("عليه", filterType == com.mahfazty.smart.ui.viewmodels.OpTypeFilter.Debt) {
+                            onSetFilterType(com.mahfazty.smart.ui.viewmodels.OpTypeFilter.Debt)
+                        }
+                        FilterChip("له", filterType == com.mahfazty.smart.ui.viewmodels.OpTypeFilter.Pay) {
+                            onSetFilterType(com.mahfazty.smart.ui.viewmodels.OpTypeFilter.Pay)
+                        }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FilterChip("كل الأوقات", filterPeriod == com.mahfazty.smart.ui.viewmodels.OpPeriod.ALL) {
+                            onSetFilterPeriod(com.mahfazty.smart.ui.viewmodels.OpPeriod.ALL)
+                        }
+                        FilterChip("هذا الشهر", filterPeriod == com.mahfazty.smart.ui.viewmodels.OpPeriod.MONTH) {
+                            onSetFilterPeriod(com.mahfazty.smart.ui.viewmodels.OpPeriod.MONTH)
+                        }
+                        FilterChip("3 أشهر", filterPeriod == com.mahfazty.smart.ui.viewmodels.OpPeriod.THREE_MONTHS) {
+                            onSetFilterPeriod(com.mahfazty.smart.ui.viewmodels.OpPeriod.THREE_MONTHS)
+                        }
+                        FilterChip("سنة", filterPeriod == com.mahfazty.smart.ui.viewmodels.OpPeriod.YEAR) {
+                            onSetFilterPeriod(com.mahfazty.smart.ui.viewmodels.OpPeriod.YEAR)
+                        }
+                    }
+                }
                 // ===== فلتر «الفواتير غير المسلمة» مع عداد حي =====
                 item {
                     Row(
@@ -804,7 +1082,8 @@ fun AccountOpsScreen(
                 editingOp = null
                 onClearPendingOp()
             },
-            onSave = { type, amount, note, materials, receipt, isInvoice, invoiceRef ->
+            // إصلاح data-1 + data-4: الاستحقاق (للديون) والعملة المثبتة تمران مع العملية
+            onSave = { type, amount, note, materials, receipt, isInvoice, invoiceRef, dueDate, currency ->
                 showAddOp = false
                 editingOp = null
                 if (editing != null) {
@@ -813,12 +1092,13 @@ fun AccountOpsScreen(
                             type = type, amount = amount, note = note,
                             materials = materials, receiptPath = receipt,
                             isInvoice = isInvoice, invoiceRef = invoiceRef,
+                            dueDate = dueDate, currency = currency,
                             // عند إلغاء صفة «فاتورة» تُصفَّر حالة التسليم أيضاً
                             invoiceDelivered = if (isInvoice) editing.invoiceDelivered else false,
                         ),
                     )
                 } else {
-                    onAddOperation(type, amount, note, materials, receipt, isInvoice, invoiceRef)
+                    onAddOperation(type, amount, note, materials, receipt, isInvoice, invoiceRef, dueDate, currency)
                 }
             },
         )
@@ -839,7 +1119,11 @@ fun AccountOpsScreen(
             bankName = settings.bankName,
             cashName = settings.cashName,
             onDismiss = { showFund = false },
-            onSave = { amount, from -> showFund = false; onFundReal(amount, from) },
+            onSave = { amount, from ->
+                // إصلاح act-1: لا تنفيذ فوري — نافذة تأكيد صريحة أولاً
+                showFund = false
+                realConfirm = RealBalanceConfirm.Fund(amount, from)
+            },
         )
     }
     if (showWithdraw) {
@@ -847,7 +1131,11 @@ fun AccountOpsScreen(
             currency = currency,
             realBalance = acc?.realBalance ?: 0.0,
             onDismiss = { showWithdraw = false },
-            onSave = { amount, to -> showWithdraw = false; onWithdrawReal(amount, to) },
+            onSave = { amount, to ->
+                // إصلاح act-1: لا تنفيذ فوري — نافذة تأكيد صريحة أولاً
+                showWithdraw = false
+                realConfirm = RealBalanceConfirm.Withdraw(amount, to)
+            },
         )
     }
     if (showTransfer) {
@@ -858,8 +1146,11 @@ fun AccountOpsScreen(
             goals = goalSources,
             onDismiss = { showTransfer = false },
             onSave = { fromClientId, fromAccountId, amount ->
+                // إصلاح act-1: لا تنفيذ فوري — نافذة تأكيد صريحة أولاً (باسم الحساب المصْدَر)
+                val name = allAccounts.firstOrNull { it.second.id == fromAccountId }
+                    ?.let { "${it.first.name} • ${it.second.name}" } ?: "حساب آخر"
                 showTransfer = false
-                onTransferReal(fromClientId, fromAccountId, client?.id ?: -1, acc?.id ?: -1, amount)
+                realConfirm = RealBalanceConfirm.Transfer(fromClientId, fromAccountId, name, amount)
             },
             onFromSavings = { amount ->
                 showTransfer = false
@@ -878,6 +1169,41 @@ fun AccountOpsScreen(
             onDismiss = { showHistory = false },
         )
     }
+    // ===== إصلاح fin-4: تسوية محمية بسبب إلزامي (تُسجل في سجل التدقيق) =====
+    if (showAdjust) {
+        AdjustRealDialog(
+            currency = currency,
+            currentReal = acc?.realBalance ?: 0.0,
+            onDismiss = { showAdjust = false },
+            onSave = { amount, reason ->
+                showAdjust = false
+                onAdjustReal(amount, reason)
+            },
+        )
+    }
+    // ===== إصلاح sec-6: سجل التعديلات — من فعل ماذا ومتى =====
+    if (showAudit) {
+        AuditLogDialog(entries = audit, onDismiss = { showAudit = false })
+    }
+    // ===== إصلاح act-4: خيارات كشف الحساب (آخر 10 / كامل / CSV) =====
+    if (showStatement) {
+        StatementOptionsDialog(
+            opCount = account?.operations?.size ?: 0,
+            onDismiss = { showStatement = false },
+            onShareLast10 = {
+                showStatement = false
+                shareViaWhatsApp(context, buildStatement(10), client?.phone)
+            },
+            onShareFull = {
+                showStatement = false
+                shareViaWhatsApp(context, buildStatement(Int.MAX_VALUE), client?.phone)
+            },
+            onExportCsv = {
+                showStatement = false
+                onExportCsv()
+            },
+        )
+    }
     if (editingAccount && acc != null) {
         AccountDialog(
             title = "تعديل الحساب",
@@ -889,10 +1215,25 @@ fun AccountOpsScreen(
             },
         )
     }
+    // إصلاح fin-2/fin-3: تحذير بالمبلغ الحقيقي المتبقي + أثر الحذف على سجل التحويلات
     if (deletingAccount && acc != null) {
+        val transferCount = transfers.count {
+            it.transfer.fromAccountId == acc.id || it.transfer.toAccountId == acc.id
+        }
+        val msg = buildString {
+            append("سيُحذف الحساب وكل عملياته.")
+            if (acc.realBalance > 0) {
+                append("\n\n⚠️ ⚠️ تحذير: يحتوي رصيدًا حقيقيًا متبقيًا قدره ${Money.fmt(acc.realBalance)}.")
+                append("\nسيختفي هذا المبلغ من التتبع نهائيًا دون عودة للبنك أو الكاش.")
+                append("\nاسحبه أولاً إن أردت استرداده.")
+            }
+            if (transferCount > 0) {
+                append("\n\nلديه $transferCount تحويل سابق — ستبقى في سجل التحويلات باسم «حساب محذوف».")
+            }
+        }
         ConfirmDialog(
             title = "حذف الحساب؟",
-            message = "سيُحذف الحساب وكل عملياته.",
+            message = msg,
             onConfirm = { deletingAccount = false; onDeleteAccount(acc.id); onBack() },
             onDismiss = { deletingAccount = false },
         )
@@ -904,6 +1245,34 @@ fun AccountOpsScreen(
             onClose = onDismissInsufficientReal,
             onFund = onQuickFundReal,
             onTransfer = onQuickTransferReal,
+        )
+    }
+
+    // ===== إصلاح act-1: تأكيد صريح قبل تنفيذ أي حركة رصيد حقيقي =====
+    realConfirm?.let { rc ->
+        val msg = when (rc) {
+            is RealBalanceConfirm.Fund ->
+                "سيُشحن ${Money.fmt(rc.amount)} إلى الرصيد الحقيقي من ${if (rc.from == Wallet.BANK) settings.bankName else settings.cashName}."
+            is RealBalanceConfirm.Withdraw ->
+                "سيُسحب ${Money.fmt(rc.amount)} من الرصيد الحقيقي إلى ${if (rc.to == Wallet.BANK) settings.bankName else settings.cashName}."
+            is RealBalanceConfirm.Transfer ->
+                "سيُحوَّل ${Money.fmt(rc.amount)} من «${rc.fromAccountName}» إلى «${acc?.name ?: ""}»."
+        }
+        ConfirmDialog(
+            title = "تأكيد الحركة المالية؟",
+            message = msg,
+            confirmText = "تأكيد",
+            danger = false,
+            onConfirm = {
+                when (rc) {
+                    is RealBalanceConfirm.Fund -> onFundReal(rc.amount, rc.from)
+                    is RealBalanceConfirm.Withdraw -> onWithdrawReal(rc.amount, rc.to)
+                    is RealBalanceConfirm.Transfer ->
+                        onTransferReal(rc.fromClientId, rc.fromAccountId, client?.id ?: -1, acc?.id ?: -1, rc.amount)
+                }
+                realConfirm = null
+            },
+            onDismiss = { realConfirm = null },
         )
     }
 }
@@ -1010,6 +1379,21 @@ private fun OpRow(
                         maxLines = 1,
                     )
                 }
+                // إصلاح data-1: تاريخ استحقاق الدين — يُحمَّر عند التأخر ليوم واحد على الأقل
+                op.dueDate?.let { dueMs ->
+                    val endOfToday = Calendar.getInstance().apply {
+                        timeInMillis = System.currentTimeMillis()
+                        add(Calendar.DAY_OF_YEAR, 1)
+                        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                    val overdue = dueMs < endOfToday
+                    Text(
+                        "⏰ الاستحقاق: ${Dates.dateTime(dueMs)}" + (if (overdue) " — متأخر!" else ""),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (overdue) LocalAppColors.current.red else LocalAppColors.current.muted,
+                    )
+                }
                 Text(
                     Dates.dateTime(op.date),
                     style = MaterialTheme.typography.labelSmall,
@@ -1022,6 +1406,28 @@ private fun OpRow(
                 color = if (op.type == OpType.DEBT) LocalAppColors.current.red else LocalAppColors.current.green,
             )
         }
+    }
+}
+
+/** رقاقة فلتر صغيرة (نوع العملية / المدى الزمني — إصلاح act-3) */
+@Composable
+private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            .clickable(onClick = onClick)
+            .bounceClick()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

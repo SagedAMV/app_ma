@@ -13,8 +13,8 @@ android {
         applicationId = "com.mahfazty.smart"
         minSdk = 24
         targetSdk = 35
-        versionCode = 19
-        versionName = "2.6.0"
+        versionCode = 20
+        versionName = "2.7.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -69,6 +69,9 @@ dependencies {
 
     // دورة الحياة والتنقل
     implementation(libs.androidx.activity.compose)
+
+    // قفل تبويب العملاء (بصمة/رمز الجهاز) — إصلاح sec-2
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

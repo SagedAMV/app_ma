@@ -59,6 +59,11 @@ class SettingsRepository(private val db: AppDatabase) {
         list.firstOrNull { it.key == "opening_cash" }?.value?.toDoubleOrNull() ?: 0.0
     }
 
+    /** وقت آخر نسخة احتياطية (null = لم تعمل قط) — أساس التذكير الدوري (إصلاح data-5) */
+    val lastBackupTs: Flow<Long?> = db.settingsDao().observeAll().map { list ->
+        list.firstOrNull { it.key == "last_backup_ts" }?.value?.toLongOrNull()
+    }
+
     suspend fun set(key: String, value: String) = db.settingsDao().upsert(SettingEntity(key, value))
 
     suspend fun setBudget(catId: String, value: Double) = set("budget_$catId", value.toString())
@@ -76,6 +81,9 @@ class SettingsRepository(private val db: AppDatabase) {
         }
         set(if (kind == CategoryKind.EXPENSE) "custom_expense" else "custom_income", arr.toString())
     }
+
+    /** تحديث وقت آخر نسخة احتياطية (تُستدعى بعد نجاح التصدير — إصلاح data-5) */
+    suspend fun setLastBackupTs(ts: Long) = set("last_backup_ts", ts.toString())
 
     suspend fun openingBankSync(): Double =
         db.settingsDao().getAll().firstOrNull { it.key == "opening_bank" }?.value?.toDoubleOrNull() ?: 0.0
@@ -102,6 +110,7 @@ class SettingsRepository(private val db: AppDatabase) {
             primary2 = map["primary_color2"] ?: "#A29BFE",
             hideBalance = map["hide_balance"] == "true",
             hideSavings = map["hide_savings"] == "true",
+            lockClients = map["lock_clients"] == "true",
             savingsGoal = map["savings_goal"]?.toDoubleOrNull() ?: 50_000.0,
             budgets = budgets,
             customExpense = parseCategories(map["custom_expense"], CategoryKind.EXPENSE),
@@ -348,6 +357,7 @@ class WalletRepository(
             db.accountDao().deleteAll()
             db.operationDao().deleteAll()
             db.transferDao().deleteAll()
+            db.auditLogDao().deleteAll()
             db.settingsDao().deleteAll()
             db.savingsDao().upsert(SavingsEntity(id = 1, opening = 0.0, goal = 50_000.0))
         }
@@ -386,6 +396,7 @@ class WalletRepository(
                 put(JSONObject().apply {
                     put("id", c.id); put("name", c.name); put("phone", c.phone ?: JSONObject.NULL)
                     put("photoPath", c.photoPath ?: JSONObject.NULL)
+                    put("status", c.status)
                 })
             }
         })
@@ -409,6 +420,9 @@ class WalletRepository(
                     put("isInvoice", o.isInvoice)
                     put("invoiceRef", o.invoiceRef ?: JSONObject.NULL)
                     put("invoiceDelivered", o.invoiceDelivered)
+                    // حقول v2.7.0: الاستحقاق + العملة المثبتة (تُستعاد إن وُجدت)
+                    put("dueDate", o.dueDate ?: JSONObject.NULL)
+                    put("currency", o.currency ?: JSONObject.NULL)
                 })
             }
         })
@@ -503,6 +517,8 @@ class WalletRepository(
                         id = newId, name = o.getString("name"),
                         phone = if (o.isNull("phone")) null else o.getString("phone"),
                         photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
+                        // النسخ القديمة بلا هذا المفتاح → «نشط» (إصلاح data-3)
+                        status = o.optString("status", "active"),
                     ))
                     clientCount++
                 }
@@ -548,6 +564,9 @@ class WalletRepository(
                         isInvoice = o.optBoolean("isInvoice", false),
                         invoiceRef = if (o.isNull("invoiceRef")) null else o.optString("invoiceRef", "").ifBlank { null },
                         invoiceDelivered = o.optBoolean("invoiceDelivered", false),
+                        // حقول v2.7.0 — النسخ القديمة بلاها (إصلاح data-1/data-4)
+                        dueDate = if (o.isNull("dueDate")) null else o.optLong("dueDate"),
+                        currency = if (o.isNull("currency")) null else o.optString("currency", "").ifBlank { null },
                     ))
                     opCount++
                 }
@@ -619,6 +638,22 @@ data class TransferDisplay(
     val toAccountName: String,
 )
 
+/** سجل تدقيق — من فعل ماذا ومتى (إصلاح sec-6) */
+data class AuditLogEntry(val ts: Long, val action: String, val details: String)
+
+/** لقطة عميل كامل قبل الحذف — أساس زر «تراجع» (إصلاح act-2) */
+data class ClientSnapshot(
+    val client: ClientEntity,
+    val accounts: List<AccountEntity>,
+    val operations: List<OperationEntity>,
+)
+
+/** لقطة حساب قبل الحذف — أساس زر «تراجع» (إصلاح act-2) */
+data class AccountSnapshot(
+    val account: AccountEntity,
+    val operations: List<OperationEntity>,
+)
+
 class ClientsRepository(
     private val db: AppDatabase,
     private val walletRepo: WalletRepository,
@@ -677,24 +712,81 @@ class ClientsRepository(
         }
     }
 
+    /** سجل التدقيق — أحدث 100 قيد (إصلاح sec-6) */
+    val auditLog: Flow<List<AuditLogEntry>> = db.auditLogDao().observeRecent().map { list ->
+        list.map { e -> AuditLogEntry(e.ts, e.action, e.details) }
+    }
+
+    /** كتابة قيد في سجل التدقيق (إصلاح sec-6) */
+    private suspend fun logAudit(action: String, details: String) {
+        db.auditLogDao().insert(AuditLogEntity(Ids.next(), System.currentTimeMillis(), action, details))
+    }
+
     // ---------- العملاء ----------
 
-    suspend fun addClient(name: String, phone: String?, photoPath: String?): Long {
+    suspend fun addClient(name: String, phone: String?, photoPath: String?, status: String = "active"): Long {
         val id = Ids.next()
-        db.clientDao().insert(ClientEntity(id, name, phone?.ifBlank { null }, photoPath))
+        db.clientDao().insert(ClientEntity(id, name, phone?.ifBlank { null }, photoPath, status))
         return id
     }
 
     suspend fun updateClient(client: Client) =
-        db.clientDao().insert(ClientEntity(client.id, client.name, client.phone, client.photoPath))
+        db.clientDao().insert(client.toEntity())
 
     suspend fun deleteClient(clientId: Long) = db.withTransaction {
         val client = db.clientDao().getAll().firstOrNull { it.id == clientId } ?: return@withTransaction
-        db.operationDao().getAll().filter { op ->
-            db.accountDao().getAll().any { it.id == op.accountId && it.clientId == clientId }
-        }.forEach { db.operationDao().delete(it) }
+        val accounts = db.accountDao().getAll().filter { it.clientId == clientId }
+        val accountIds = accounts.map { it.id }.toSet()
+        val ops = db.operationDao().getAll().filter { it.accountId in accountIds }
+        val realTotal = accounts.sumOf { it.realBalance }
+        ops.forEach { db.operationDao().delete(it) }
         db.accountDao().deleteByClient(clientId)
         db.clientDao().delete(client)
+        logAudit(
+            "حذف عميل",
+            "حُذف «${client.name}» مع ${accounts.size} حساب و${ops.size} عملية" +
+                if (realTotal > 0) " — ضاع رصيد حقيقي قدره ${realTotal}" else "",
+        )
+    }
+
+    // ---------- التراجع عن الحذف (إصلاح act-2) ----------
+
+    /** لقطة العميل كاملًا (عميل + حساباته + عملياته) قبل حذفه */
+    suspend fun snapshotClient(clientId: Long): ClientSnapshot? {
+        val client = db.clientDao().getAll().firstOrNull { it.id == clientId } ?: return null
+        val accounts = db.accountDao().getAll().filter { it.clientId == clientId }
+        val accountIds = accounts.map { it.id }.toSet()
+        val ops = db.operationDao().getAll().filter { it.accountId in accountIds }
+        return ClientSnapshot(client, accounts, ops)
+    }
+
+    /** استعادة لقطة عميل — يعيد الرصيد الحقيقي الأصلي لحساباته (كان محفوظاً في اللقطة) */
+    suspend fun restoreClient(snap: ClientSnapshot) = db.withTransaction {
+        snap.operations.forEach { db.operationDao().insert(it) }
+        snap.accounts.forEach { db.accountDao().insert(it) }
+        db.clientDao().insert(snap.client)
+        logAudit("تراجع عن حذف عميل", "استُعيد «${snap.client.name}» بكل حساباته وعملياته")
+    }
+
+    /** لقطة حساب واحد (حساب + عملياته) قبل حذفه */
+    suspend fun snapshotAccount(accountId: Long): AccountSnapshot? {
+        val account = db.accountDao().getById(accountId) ?: return null
+        val ops = db.operationDao().getAll().filter { it.accountId == accountId }
+        return AccountSnapshot(account, ops)
+    }
+
+    /** استعادة لقطة حساب — تعيد الرصيد الحقيقي الأصلي */
+    suspend fun restoreAccount(snap: AccountSnapshot) = db.withTransaction {
+        snap.operations.forEach { db.operationDao().insert(it) }
+        db.accountDao().insert(snap.account)
+        logAudit("تراجع عن حذف حساب", "استُعيد «${snap.account.name}» برصيده وعملياته")
+    }
+
+    /** استعادة عمليات محذوفة دفعة + إعادة أثرها على الأرصدة الحقيقية */
+    suspend fun restoreOperations(ops: List<ClientOperation>, affectedAccounts: List<AccountEntity>) = db.withTransaction {
+        affectedAccounts.forEach { db.accountDao().insert(it) }
+        ops.forEach { db.operationDao().insert(it.toEntity()) }
+        logAudit("تراجع عن حذف عمليات", "استُعيدت ${ops.size} عملية")
     }
 
     // ---------- الحسابات ----------
@@ -710,38 +802,57 @@ class ClientsRepository(
     )
 
     suspend fun deleteAccount(accountId: Long) = db.withTransaction {
+        val account = db.accountDao().getById(accountId) ?: return@withTransaction
+        val opsCount = db.operationDao().getAll().count { it.accountId == accountId }
         db.operationDao().deleteByAccount(accountId)
         db.accountDao().deleteById(accountId)
+        logAudit(
+            "حذف حساب",
+            "حُذف «${account.name}» مع $opsCount عملية" +
+                if (account.realBalance > 0) " — ضاع رصيد حقيقي قدره ${account.realBalance}" else "",
+        )
     }
 
     // ---------- العمليات (دين/سداد) ----------
+
+    /** تحويل نص النوع المخزّن إلى enum بأمان (سجل تالف لا يُسقط التطبيق — نمط إصلاح B2) */
+    private fun opTypeOf(s: String): OpType = runCatching { OpType.valueOf(s) }.getOrDefault(OpType.DEBT)
+
+    /** صياغة ملخص عملية للقيد/الرسائل */
+    private fun opSummary(op: ClientOperation): String =
+        "${if (op.type == OpType.DEBT) "عليه" else "له"} ${Money.fmtLat(op.amount)}" +
+            (op.note?.takeIf { it.isNotBlank() }?.let { " — $it" } ?: "")
 
     suspend fun addOperation(
         accountId: Long, type: OpType, amount: Double, note: String?,
         materials: List<MaterialItem>, receiptPath: String?,
         isInvoice: Boolean = false, invoiceRef: String? = null,
+        dueDate: Long? = null, currency: String? = null,
     ): WalletError? {
         if (amount <= 0 || amount.isNaN()) return WalletError.InvalidAmount
         // حقول الفاتورة وصفية بحتة — تظهر في الإدخال ولا تدخل في الفحص المالي أبداً
         // (إجبارية الحقل تتحقق في واجهة الإدخال برسالة واضحة للمستخدم)
         val ref = if (isInvoice) invoiceRef?.ifBlank { null } else null
+        // تاريخ الاستحقاق للديون فقط (إصلاح data-1) — عملية «له» بلا استحقاق
+        val due = if (type == OpType.DEBT) dueDate else null
         return db.withTransaction {
             val acc = db.accountDao().getById(accountId)
                 ?: return@withTransaction WalletError.InvalidAmount
             if (type == OpType.DEBT) {
                 WalletEngine.checkDebtAgainstReal(acc.realBalance, amount)?.let { return@withTransaction it }
             }
+            val op = ClientOperation(
+                id = Ids.next(), accountId = accountId, type = type, amount = amount,
+                note = note?.ifBlank { null }, date = System.currentTimeMillis(),
+                materials = materials, receiptPath = receiptPath,
+                isInvoice = isInvoice, invoiceRef = ref,
+                dueDate = due, currency = currency,
+            )
             db.accountDao().update(
                 acc.copy(realBalance = WalletEngine.applyOpToReal(acc.realBalance, type, amount)),
             )
-            db.operationDao().insert(
-                ClientOperation(
-                    id = Ids.next(), accountId = accountId, type = type, amount = amount,
-                    note = note?.ifBlank { null }, date = System.currentTimeMillis(),
-                    materials = materials, receiptPath = receiptPath,
-                    isInvoice = isInvoice, invoiceRef = ref,
-                ).toEntity(),
-            )
+            db.operationDao().insert(op.toEntity())
+            logAudit("إضافة عملية", opSummary(op))
             null
         }
     }
@@ -753,40 +864,72 @@ class ClientsRepository(
                 ?: return@withTransaction WalletError.InvalidAmount
             val acc = db.accountDao().getById(updated.accountId)
                 ?: return@withTransaction WalletError.InvalidAmount
-            val oldType = runCatching { OpType.valueOf(old.type) }.getOrDefault(OpType.DEBT)
+            val oldType = opTypeOf(old.type)
             val balBefore = WalletEngine.reverseOpFromReal(acc.realBalance, oldType, old.amount)
             if (updated.type == OpType.DEBT) {
                 WalletEngine.checkDebtAgainstReal(balBefore, updated.amount)?.let { return@withTransaction it }
             }
-            db.accountDao().update(
-                acc.copy(realBalance = WalletEngine.applyOpToReal(balBefore, updated.type, updated.amount)),
-            )
+            // إصلاح fin-1: النتيجة النهائية (بعد عكس القديم وتطبيق الجديد) يجب ألا تكون سالبة
+            val finalReal = WalletEngine.applyOpToReal(balBefore, updated.type, updated.amount)
+            if (finalReal < -0.000001) return@withTransaction WalletError.UnsafeRealDelete
+            db.accountDao().update(acc.copy(realBalance = finalReal))
             db.operationDao().insert(updated.toEntity())
+            logAudit(
+                "تعديل عملية",
+                "قبل: ${if (oldType == OpType.DEBT) "عليه" else "له"} ${Money.fmtLat(old.amount)}" +
+                    (old.note?.takeIf { it.isNotBlank() }?.let { " — $it" } ?: "") +
+                    " | بعد: ${opSummary(updated)}",
+            )
             null
         }
     }
 
-    suspend fun deleteOperation(op: ClientOperation) = db.withTransaction {
+    /**
+     * حذف عملية عميل.
+     * إصلاح fin-1: يُرفض الحذف إذا كان عكس أثره سيجعل الرصيد الحقيقي سالباً
+     * (نفس فلسفة UnsafeDelete في المحفظة الرئيسية — لا سالب أبداً).
+     */
+    suspend fun deleteOperation(op: ClientOperation): WalletError? = db.withTransaction {
         val acc = db.accountDao().getById(op.accountId)
         if (acc != null) {
+            WalletEngine.checkReverseOpKeepsNonNegative(acc.realBalance, op.type, op.amount)
+                ?.let { return@withTransaction it }
             db.accountDao().update(
                 acc.copy(realBalance = WalletEngine.reverseOpFromReal(acc.realBalance, op.type, op.amount)),
             )
         }
         db.operationDao().delete(op.toEntity())
+        logAudit("حذف عملية", opSummary(op))
+        null
     }
 
-    /** إصلاح B4: حذف جماعي ذرّي — كل العمليات في معاملة واحدة، فلا حذف جزئي عند انقطاع منتصف الطريق */
-    suspend fun deleteOperations(ops: List<ClientOperation>) = db.withTransaction {
-        ops.forEach { op ->
-            val acc = db.accountDao().getById(op.accountId)
-            if (acc != null) {
-                db.accountDao().update(
-                    acc.copy(realBalance = WalletEngine.reverseOpFromReal(acc.realBalance, op.type, op.amount)),
-                )
-            }
-            db.operationDao().delete(op.toEntity())
+    /**
+     * حذف جماعي. إصلاح B4 (ذرّي) + إصلاح fin-1:
+     * تمريرة تحقق مسبقة لكل حساب قبل أي كتابة — إن أفضى الحذف إلى رصيد حقيقي سالب
+     * يُرفض الحذف كاملاً (لا حذف جزئي يكسر الثوابت).
+     */
+    suspend fun deleteOperations(ops: List<ClientOperation>): WalletError? = db.withTransaction {
+        if (ops.isEmpty()) return@withTransaction null
+        val byAccount = ops.groupBy { it.accountId }
+        // 1) تحقق مسبق لكل الحسابات المتأثرة
+        for ((accId, list) in byAccount) {
+            val acc = db.accountDao().getById(accId) ?: continue
+            var real = acc.realBalance
+            list.forEach { real = WalletEngine.reverseOpFromReal(real, it.type, it.amount) }
+            if (real < -0.000001) return@withTransaction WalletError.UnsafeRealDelete
         }
+        // 2) تنفيذ الحذف
+        byAccount.forEach { (accId, list) ->
+            val acc = db.accountDao().getById(accId)
+            if (acc != null) {
+                var real = acc.realBalance
+                list.forEach { real = WalletEngine.reverseOpFromReal(real, it.type, it.amount) }
+                db.accountDao().update(acc.copy(realBalance = real))
+            }
+            list.forEach { db.operationDao().delete(it.toEntity()) }
+        }
+        logAudit("حذف عمليات (دفعة)", "${ops.size} عملية")
+        null
     }
 
     /** تسليم فاتورة: يقلب invoiceDelivered فقط — صفر تأثير على أي رصيد (حقل وصفي بحت) */
@@ -794,6 +937,11 @@ class ClientsRepository(
         val entity = db.operationDao().getAll().firstOrNull { it.id == opId }
             ?: return@withTransaction false
         db.operationDao().insert(entity.copy(invoiceDelivered = true))
+        logAudit(
+            "تسليم فاتورة",
+            (entity.invoiceRef?.takeIf { it.isNotBlank() } ?: "عملية #${entity.id}") +
+                " — ${Money.fmtLat(entity.amount)}",
+        )
         true
     }
 
@@ -817,6 +965,7 @@ class ClientsRepository(
                 ),
             )
             db.accountDao().update(acc.copy(realBalance = acc.realBalance + amount))
+            logAudit("شحن رصيد حقيقي", "+${Money.fmtLat(amount)} إلى «${acc.name}» من ${if (from == Wallet.BANK) "البنك" else "الكاش"}")
             null
         }
     }
@@ -838,6 +987,7 @@ class ClientsRepository(
                 ),
             )
             db.accountDao().update(acc.copy(realBalance = acc.realBalance - amount))
+            logAudit("سحب رصيد حقيقي", "-${Money.fmtLat(amount)} من «${acc.name}» إلى ${if (to == Wallet.BANK) "البنك" else "الكاش"}")
             null
         }
     }
@@ -864,24 +1014,53 @@ class ClientsRepository(
                     amount = amount, date = System.currentTimeMillis(),
                 ),
             )
+            logAudit("تحويل رصيد حقيقي", "${Money.fmtLat(amount)} من «${from.name}» إلى «${to.name}»")
+            null
+        }
+    }
+
+    /**
+     * إصلاح fin-4: تسوية يدوية للرصيد الحقيقي (تصحيح خطأ إدخال أو تلف بيانات).
+     * محمية: تكتب قيداً في سجل التدقيق بقيمة القديم والجديد والسبب الإلزامي —
+     * ولا تدخل أي عملية في السجل المالي (لا شوائب في كشف الحساب).
+     */
+    suspend fun adjustReal(accountId: Long, newAmount: Double, reason: String): WalletError? {
+        if (newAmount < 0 || newAmount.isNaN()) return WalletError.InvalidAmount
+        return db.withTransaction {
+            val acc = db.accountDao().getById(accountId)
+                ?: return@withTransaction WalletError.InvalidAmount
+            val old = acc.realBalance
+            db.accountDao().update(acc.copy(realBalance = newAmount))
+            logAudit(
+                "تسوية رصيد حقيقي",
+                "«${acc.name}»: ${Money.fmtLat(old)} ← ${Money.fmtLat(newAmount)} (السبب: ${reason.ifBlank { "غير مذكور" }})",
+            )
             null
         }
     }
 
     /** نص مشاركة واتساب لكشف حساب */
-    fun whatsAppText(client: Client, acc: AccountWithOps): String {
+    /**
+     * نص مشاركة واتساب لكشف حساب.
+     * إصلاح act-4: `limit` قابل للتحديد — 10 = آخر 10 (السلوك القديم)،
+     * Int.MAX_VALUE = الكشف الكامل (كل العمليات).
+     */
+    fun whatsAppText(client: Client, acc: AccountWithOps, limit: Int = 10): String {
         val bal = acc.opsBalance
         val real = acc.account.realBalance
+        val fmt = com.mahfazty.smart.domain.Money::fmt
         val sb = StringBuilder()
         sb.append("🧾 كشف حساب: ${acc.account.name} ${acc.account.icon}\n")
         sb.append("👤 العميل: ${client.name}\n")
-        sb.append("💰 الرصيد الحقيقي: ${com.mahfazty.smart.domain.Money.fmt(real)}\n")
-        if (bal > 0) sb.append("🔴 عليه: ${com.mahfazty.smart.domain.Money.fmt(bal)}\n")
-        else if (bal < 0) sb.append("🟢 له: ${com.mahfazty.smart.domain.Money.fmt(-bal)}\n")
-        sb.append("\n📋 العمليات:\n")
-        acc.operations.sortedByDescending { it.date }.take(10).forEachIndexed { i, op ->
+        sb.append("💰 الرصيد الحقيقي: ${fmt(real)}\n")
+        if (bal > 0) sb.append("🔴 عليه: ${fmt(bal)}\n")
+        else if (bal < 0) sb.append("🟢 له: ${fmt(-bal)}\n")
+        sb.append(if (limit == Int.MAX_VALUE) "\n📋 كل العمليات (${acc.operations.size}):\n" else "\n📋 آخر ${limit} عمليات:\n")
+        acc.operations.sortedByDescending { it.date }.take(limit).forEachIndexed { i, op ->
             val label = if (op.type == OpType.DEBT) "عليه" else "له"
-            sb.append("${i + 1}. $label ${com.mahfazty.smart.domain.Money.fmt(op.amount)} - ${op.note ?: ""}")
+            // إصلاح data-4: عملة العملية المثبتة وقت تسجيلها (أو رمز عام إن كانت قديمة)
+            sb.append("${i + 1}. $label ${fmt(op.amount)} ${op.currency ?: ""} - ${op.note ?: ""}".trim())
+            if (op.isInvoice && !op.invoiceRef.isNullOrBlank()) sb.append(" (🧾 ${op.invoiceRef})")
             if (op.materials.isNotEmpty()) sb.append(" [${op.materials.joinToString(", ") { it.name }}]")
             sb.append("\n")
         }

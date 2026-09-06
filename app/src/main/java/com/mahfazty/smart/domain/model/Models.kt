@@ -18,6 +18,25 @@ enum class OpType { DEBT, PAY }
 /** وضع المظهر */
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 
+/** حالة العميل (إصلاح data-3) — نشط / موقوف / قائمة سوداء */
+object ClientStatus {
+    const val ACTIVE = "active"
+    const val STOPPED = "stopped"
+    const val BLOCKED = "blocked"
+
+    fun label(s: String): String = when (s) {
+        STOPPED -> "موقوف"
+        BLOCKED -> "قائمة سوداء"
+        else -> "نشط"
+    }
+
+    fun icon(s: String): String = when (s) {
+        STOPPED -> "🟠"
+        BLOCKED -> "🔴"
+        else -> "🟢"
+    }
+}
+
 /** نوع الفئة */
 enum class CategoryKind { EXPENSE, INCOME, TRANSFER }
 
@@ -93,6 +112,8 @@ data class AppSettings(
     val primary2: String = "#A29BFE",
     val hideBalance: Boolean = false,
     val hideSavings: Boolean = false,
+    /** قفل تبويب العملاء بالبصمة/رمز الجهاز (إصلاح sec-2) */
+    val lockClients: Boolean = false,
     val savingsGoal: Double = 50_000.0,
     val budgets: Map<String, Double> = defaultBudgets(),
     val customExpense: List<Category> = emptyList(),
@@ -113,6 +134,8 @@ data class Client(
     val name: String,
     val phone: String? = null,
     val photoPath: String? = null,
+    /** حالة العميل: نشط/موقوف/قائمة سوداء (إصلاح data-3) */
+    val status: String = ClientStatus.ACTIVE,
 )
 
 /**
@@ -157,6 +180,13 @@ data class ClientOperation(
     val invoiceRef: String? = null,
     /** هل سُلّمت الفاتورة للعميل؟ (الفواتير غير المسلمة = معلقة) */
     val invoiceDelivered: Boolean = false,
+    /** تاريخ استحقاق الدين (اختياري، للعمليات من نوع «عليه» فقط — إصلاح data-1) */
+    val dueDate: Long? = null,
+    /**
+     * العملة المثبتة وقت تسجيل العملية (إصلاح data-4).
+     * nullable لأن العمليات القديمة (قبل v2.7.0) لا تحملها — تُعرض بعملة الإعدادات الحالية.
+     */
+    val currency: String? = null,
 )
 
 /** تحويل رصيد حقيقي بين حسابات العملاء */
@@ -184,6 +214,9 @@ sealed interface WalletError {
 
     /** إصلاح A3: الحذف سيجعل رصيداً أو مدخراً سالباً — يُرفض */
     data object UnsafeDelete : WalletError
+
+    /** إصلاح fin-1: حذف/تعديل عملية عميل سيجعل رصيداً حقيقياً سالباً — يُرفض */
+    data object UnsafeRealDelete : WalletError
 }
 
 /** هدف مع مدخره المشتق */

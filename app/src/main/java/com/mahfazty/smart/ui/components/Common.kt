@@ -1,6 +1,7 @@
 package com.mahfazty.smart.ui.components
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Canvas
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.animation.core.Spring
@@ -280,7 +283,10 @@ fun AppSheet(title: String, onDismiss: () -> Unit, content: @Composable () -> Un
     }
 }
 
-/** حوار تأكيد عام */
+/**
+ * حوار تأكيد عام.
+ * extraText/onExtra: خيار ثالث اختياري (مثال: «فتح العميل الموجود» عند كشف التكرار — إصلاح act-5).
+ */
 @Composable
 fun ConfirmDialog(
     title: String,
@@ -289,6 +295,8 @@ fun ConfirmDialog(
     danger: Boolean = true,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    extraText: String? = null,
+    onExtra: (() -> Unit)? = null,
 ) {
     AppDialog(onDismiss = onDismiss) {
         Column(Modifier.padding(20.dp)) {
@@ -298,6 +306,10 @@ fun ConfirmDialog(
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("إلغاء") }
+                if (extraText != null) {
+                    TextButton(onClick = { onExtra?.invoke() }) { Text(extraText) }
+                    Spacer(Modifier.width(4.dp))
+                }
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = onConfirm,
@@ -342,14 +354,21 @@ fun AppTextField(
     onValueChange: (String) -> Unit,
     label: String,
     modifier: Modifier = Modifier,
+    /** إصلاح sec-5: حد أقصى لعدد الأحرف (يمنع تشوه العرض والتصدير) */
+    maxLength: Int = Int.MAX_VALUE,
+    /** إصلاح sec-4: لوحة مفاتيح رقمية لحقول الهاتف */
+    phoneKeypad: Boolean = false,
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { if (it.length <= maxLength) onValueChange(it) },
         modifier = modifier.fillMaxWidth(),
         label = { Text(label) },
         shape = RoundedCornerShape(14.dp),
         singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (phoneKeypad) KeyboardType.Phone else KeyboardType.Text,
+        ),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.primary,
             unfocusedBorderColor = com.mahfazty.smart.ui.theme.LocalAppColors.current.border,
@@ -494,21 +513,70 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
 
 // ============ الصور ============
 
-/** حفظ صورة منتقاة داخل ملفات التطبيق وإرجاع المسار */
+/**
+ * إصلاح sec-5: حفظ الصور بأمان —
+ *  1) حد أقصى لحجم الملف المصدر (20 م.ب) قبل أي نسخ.
+ *  2) تصغير (downsampling) لأي شيء يتجاوز 1600px + ضغط JPEG —
+ *     فلا تخزين ملفات ضخمة ولا decode كامل لاحقاً يستهلك الذاكرة (OutOfMemoryError).
+ *  3) فشل الحفظ لم يعد صامتاً: يُرجع رسالة واضحة تُعرض للمستخدم (إصلاح act-6).
+ */
 object PhotoStore {
-    fun save(context: Context, uri: Uri, prefix: String): String? = runCatching {
+    const val MAX_SOURCE_BYTES = 20L * 1024 * 1024
+    const val MAX_DIMENSION = 1600
+
+    data class PhotoResult(val path: String?, val error: String?)
+
+    fun save(context: Context, uri: Uri, prefix: String): PhotoResult = runCatching {
+        val size = context.contentResolver.openInputStream(uri)?.use { it.length() } ?: 0L
+        if (size > MAX_SOURCE_BYTES) {
+            return@runCatching PhotoResult(null, "حجم الصورة كبير جداً (الحد الأقصى 20 م.ب) — اختر صورة أصغر")
+        }
+        // 1) قراءة الأبعاد فقط
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return@runCatching PhotoResult(null, "تعذر قراءة الصورة — صيغة غير مدعومة")
+        }
+        // 2) تصغير قبل الفتح الكامل
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_DIMENSION) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        } ?: return@runCatching PhotoResult(null, "تعذر قراءة الصورة")
+        val bitmap = if (decoded.width > MAX_DIMENSION || decoded.height > MAX_DIMENSION) {
+            val scale = maxOf(
+                decoded.width.toFloat() / MAX_DIMENSION,
+                decoded.height.toFloat() / MAX_DIMENSION,
+            )
+            Bitmap.createScaledBitmap(
+                decoded,
+                (decoded.width / scale).toInt(),
+                (decoded.height / scale).toInt(),
+                true,
+            )
+        } else decoded
         val dir = File(context.filesDir, "photos").apply { mkdirs() }
         val file = File(dir, "${prefix}_${System.currentTimeMillis()}.jpg")
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            file.outputStream().use { output -> input.copyTo(output) }
-        }
-        file.absolutePath
-    }.getOrNull()
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 82, it) }
+        PhotoResult(file.absolutePath, null)
+    }.getOrElse { e -> PhotoResult(null, "تعذر حفظ الصورة: ${e.message}") }
 
-    fun load(path: String?): androidx.compose.ui.graphics.ImageBitmap? {
+    /**
+     * فتح صورة للتصغير (أفاتار/معاينة) بحجم هدف محدد — لا تفكيك كامل للصورة الضخمة.
+     */
+    fun load(path: String?, targetPx: Int = 512): androidx.compose.ui.graphics.ImageBitmap? {
         if (path.isNullOrBlank()) return null
         return runCatching {
-            BitmapFactory.decodeFile(path)?.asImageBitmap()
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            if (bounds.outWidth <= 0) return@runCatching null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > targetPx) sample *= 2
+            BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+                ?.asImageBitmap()
         }.getOrNull()
     }
 }

@@ -2,6 +2,8 @@ package com.mahfazty.smart.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import com.mahfazty.smart.data.ClientsRepository
 import com.mahfazty.smart.data.SettingsRepository
 import com.mahfazty.smart.data.WalletRepository
@@ -12,6 +14,7 @@ import com.mahfazty.smart.domain.model.AppSettings
 import com.mahfazty.smart.domain.model.DayBar
 import com.mahfazty.smart.domain.model.Goal
 import com.mahfazty.smart.domain.model.GoalWithSaved
+import com.mahfazty.smart.domain.model.OpType
 import com.mahfazty.smart.domain.model.Transaction
 import com.mahfazty.smart.domain.model.TxType
 import com.mahfazty.smart.domain.model.Wallet
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -43,6 +47,7 @@ fun WalletError.message(): String = when (this) {
     is WalletError.InsufficientReal -> "الرصيد الحقيقي غير كافٍ"
     WalletError.ProtectedCategory -> "هذه العملية تخص فئة نظام (أهداف/ادخار/عملاء) — تُدار من شاشتها المخصصة فقط"
     WalletError.UnsafeDelete -> "حذف هذه العملية يجعل رصيداً أو مدخراً سالباً — احذف العمليات الأحدث أولاً"
+    WalletError.UnsafeRealDelete -> "لا يمكن تنفيذ هذا: سيجعل الرصيد الحقيقي سالباً. احذف أو عدّل عمليات «عليه» الأحدث أولاً"
 }
 
 /** اقتراح سحب سريع (من هدف أو ادخار) عند نقص الرصيد */
@@ -110,6 +115,7 @@ fun WalletError.toInsufficient(
 class MainViewModel(
     private val walletRepo: WalletRepository,
     private val settingsRepo: SettingsRepository,
+    private val clientsRepo: ClientsRepository,
 ) : ViewModel() {
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
@@ -126,6 +132,88 @@ class MainViewModel(
 
     val savingsTotal: StateFlow<Double> = walletRepo.savingsTotal
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0.0)
+
+    // ---------- قفل تبويب العملاء (إصلاح sec-2) ----------
+
+    val lockEnabled: StateFlow<Boolean> = settingsRepo.settings
+        .map { it.lockClients }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** فُتح القفل مرة واحدة لكل جلسة تشغيل — عند إغلاق التطبيق يُقفل من جديد */
+    private val _clientsUnlocked = MutableStateFlow(false)
+    val clientsUnlocked: StateFlow<Boolean> = _clientsUnlocked.asStateFlow()
+
+    /**
+     * طلب التحقق بالبصمة أو رمز الجهاز.
+     * إذا كان الجهاز بلا أي وسيلة تحقق (لا بصمة ولا رمز قفل) يُبلَّغ بالخطأ
+     * ولا يُفتح القفل — فلا قفل بلا تحقق حقيقي.
+     */
+    fun unlockClients(activity: androidx.fragment.app.FragmentActivity, onError: (String) -> Unit) {
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val manager = BiometricManager.from(activity)
+        if (manager.canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
+            onError("هذا الجهاز لا يدعم البصمة أو رمز القفل — لا يمكن استخدام القفل")
+            return
+        }
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("قفل تبويب العملاء")
+            .setSubtitle("ثبّت بصمتك أو أدخل رمز الجهاز لعرض بيانات العملاء")
+            .setAllowedAuthenticators(authenticators)
+            .setConfirmationRequired(false)
+            .build()
+        BiometricPrompt(activity, androidx.core.content.ContextCompat.getMainExecutor(activity),
+            object : BiometricPrompt.Callback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    _clientsUnlocked.value = true
+                }
+
+                override fun onAuthenticationFailed() {
+                    // محاولة فاشلة — يمكن للمستخدم المحاولة من جديد
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                        errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                        errorCode != BiometricPrompt.ERROR_CANCELED
+                    ) {
+                        onError(errString.toString())
+                    }
+                }
+            }).authenticate(promptInfo)
+    }
+
+    // ---------- تذكير استحقاق الديون (إصلاح data-1) ----------
+
+    /**
+     * فحص ديون مستحقة اليوم أو متأخرة وإرسال إشعار محلي واحد (يُحدَّث عند كل فحص).
+     * يُستدعى عند بدء التطبيق بعد منح إذن الإشعارات.
+     */
+    fun checkDueNotifications(context: android.content.Context) = viewModelScope.launch {
+        val data = clientsRepo.clientsWithData.first()
+        val endOfToday = Calendar.getInstance().apply {
+            timeInMillis = System.currentTimeMillis()
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        var due = 0
+        val names = mutableListOf<String>()
+        data.forEach { c ->
+            c.accounts.forEach { a ->
+                a.operations.forEach { op ->
+                    val d = op.dueDate
+                    if (op.type == OpType.DEBT && d != null && d < endOfToday) {
+                        due++
+                        if (names.size < 3) names.add("${c.client.name} • ${a.account.name}")
+                    }
+                }
+            }
+        }
+        if (due > 0) {
+            com.mahfazty.smart.ui.util.DuesNotifier.post(context, due, names)
+        }
+    }
 
     fun updateSetting(key: String, value: String) = viewModelScope.launch { settingsRepo.set(key, value) }
     fun setBudget(catId: String, value: Double) = viewModelScope.launch { settingsRepo.setBudget(catId, value) }

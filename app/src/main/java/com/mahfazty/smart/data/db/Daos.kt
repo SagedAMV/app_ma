@@ -153,6 +153,19 @@ interface OperationDao {
     suspend fun deleteAll()
 }
 
+/** سجل التدقيق (إصلاح sec-6) — أحدث 100 سجل */
+@Dao
+interface AuditLogDao {
+    @Query("SELECT * FROM audit_log ORDER BY ts DESC LIMIT 100")
+    fun observeRecent(): Flow<List<AuditLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entry: AuditLogEntity)
+
+    @Query("DELETE FROM audit_log")
+    suspend fun deleteAll()
+}
+
 @Dao
 interface TransferDao {
     @Query("SELECT * FROM transfers ORDER BY date DESC")

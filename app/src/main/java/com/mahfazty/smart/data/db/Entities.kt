@@ -62,6 +62,18 @@ data class ClientEntity(
     val name: String,
     val phone: String?,
     val photoPath: String?,
+    /** حالة العميل: نشط/موقوف/قائمة سوداء (إصلاح data-3) — الافتراضي «نشط» للصفوف القديمة */
+    @ColumnInfo(defaultValue = "active")
+    val status: String = "active",
+)
+
+/** سجل تدقيق: من عدّل/حذف/حوّل ماذا ومتى (إصلاح sec-6) */
+@Entity(tableName = "audit_log")
+data class AuditLogEntity(
+    @PrimaryKey val id: Long,
+    val ts: Long,
+    val action: String,
+    val details: String,
 )
 
 /** حساب عميل (ماطور، كهرباء...) */
@@ -91,6 +103,10 @@ data class OperationEntity(
     val invoiceRef: String? = null,
     @ColumnInfo(defaultValue = "0")
     val invoiceDelivered: Boolean = false,
+    /** تاريخ استحقاق الدين — null = بلا استحقاق (إصلاح data-1) */
+    val dueDate: Long? = null,
+    /** العملة المثبتة وقت العملية — null = عملة الإعدادات وقت العرض (إصلاح data-4) */
+    val currency: String? = null,
 )
 
 /** تحويل رصيد حقيقي بين حسابات */
@@ -124,7 +140,11 @@ fun Goal.toEntity(): GoalEntity = GoalEntity(id = id, name = name, target = targ
 
 fun SavingsEntity.toDomain(): SavingsAccount = SavingsAccount(opening = opening, goal = goal)
 
-fun ClientEntity.toDomain(): Client = Client(id = id, name = name, phone = phone, photoPath = photoPath)
+fun ClientEntity.toDomain(): Client =
+    Client(id = id, name = name, phone = phone, photoPath = photoPath, status = status)
+
+fun Client.toEntity(): ClientEntity =
+    ClientEntity(id = id, name = name, phone = phone, photoPath = photoPath, status = status)
 
 fun AccountEntity.toDomain(): ClientAccount =
     ClientAccount(id = id, clientId = clientId, name = name, icon = icon, realBalance = realBalance)
@@ -135,6 +155,7 @@ fun OperationEntity.toDomain(): ClientOperation = ClientOperation(
     amount = amount, note = note, date = date,
     materials = materialsJson.toMaterials(), receiptPath = receiptPath,
     isInvoice = isInvoice, invoiceRef = invoiceRef, invoiceDelivered = invoiceDelivered,
+    dueDate = dueDate, currency = currency,
 )
 
 fun ClientOperation.toEntity(): OperationEntity = OperationEntity(
@@ -142,6 +163,7 @@ fun ClientOperation.toEntity(): OperationEntity = OperationEntity(
     note = note, date = date,
     materialsJson = materials.toJsonOrNull(), receiptPath = receiptPath,
     isInvoice = isInvoice, invoiceRef = invoiceRef, invoiceDelivered = invoiceDelivered,
+    dueDate = dueDate, currency = currency,
 )
 
 fun TransferEntity.toDomain(): RealTransfer = RealTransfer(
