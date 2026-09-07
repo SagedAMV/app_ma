@@ -34,6 +34,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +79,7 @@ import com.mahfazty.smart.ui.components.StaggeredEntrance
 import com.mahfazty.smart.ui.components.bounceClick
 import com.mahfazty.smart.ui.theme.LocalAppColors
 import com.mahfazty.smart.ui.theme.parseHex
+import com.mahfazty.smart.ui.theme.rememberReduceMotion
 import com.mahfazty.smart.ui.util.shareFile
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -452,11 +460,28 @@ fun SettingsScreen(
                     }
                 }
             }
+            // حدود حمراء نابضة لمنطقة الخطر (معايرة 2026)
+            val reduceMotion = rememberReduceMotion()
+            val dangerInf = if (!reduceMotion) rememberInfiniteTransition(label = "dangerPulse") else null
+            val dangerPulse = dangerInf?.let {
+                it.animateFloat(
+                    initialValue = 0.35f,
+                    targetValue = 0.85f,
+                    animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Reverse),
+                    label = "dangerPulseV",
+                ).value
+            } ?: 0.5f
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 DataButton("💾 عمل نسخة احتياطية", MaterialTheme.colorScheme.primary) { vm.exportJson(context) }
                 DataButton("📊 تصدير CSV", MaterialTheme.colorScheme.primary) { vm.exportCsv(context) }
                 DataButton("📥 استيراد", MaterialTheme.colorScheme.primary) { importPicker.launch("application/json") }
-                DataButton("🗑️ مسح الكل", LocalAppColors.current.red) { confirmClear = true }
+                Box(
+                    Modifier
+                        .border(1.5.dp, LocalAppColors.current.red.copy(alpha = dangerPulse), RoundedCornerShape(14.dp))
+                        .padding(3.dp),
+                ) {
+                    DataButton("🗑️ مسح الكل", LocalAppColors.current.red) { confirmClear = true }
+                }
                 Text(
                     "💡 نصيحة: صدّر بياناتك أسبوعياً كنسخة احتياطية. ملف JSON يحتوي جميع بياناتك وعملائك.",
                     style = MaterialTheme.typography.bodySmall,

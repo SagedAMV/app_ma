@@ -6,6 +6,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -358,22 +360,69 @@ fun AppTextField(
     maxLength: Int = Int.MAX_VALUE,
     /** إصلاح sec-4: لوحة مفاتيح رقمية لحقول الهاتف */
     phoneKeypad: Boolean = false,
+    /** أنميشن 2026: عند true يهتز الحقل بـ softShake (أخطاء التحقق) */
+    error: Boolean = false,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { if (it.length <= maxLength) onValueChange(it) },
-        modifier = modifier.fillMaxWidth(),
-        label = { Text(label) },
-        shape = RoundedCornerShape(14.dp),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = if (phoneKeypad) KeyboardType.Phone else KeyboardType.Text,
-        ),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = com.mahfazty.smart.ui.theme.LocalAppColors.current.border,
-        ),
+    val reduceMotion = com.mahfazty.smart.ui.theme.rememberReduceMotion()
+    // اهتزاز عند الخطأ
+    val shake = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(error) {
+        if (error && !reduceMotion) {
+            shake.snapTo(0f)
+            kotlinx.coroutines.delay(60)
+            shake.animateTo(targetValue = 1f, animationSpec = com.mahfazty.smart.ui.theme.Motion.softShake)
+        }
+    }
+    // التركيز (معايرة 2026): تكبير خفيف 1.02 + هالة متدرجة حول الحقل
+    var isFocused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (isFocused && !reduceMotion) 1.02f else 1f,
+        animationSpec = com.mahfazty.smart.ui.theme.Motion.springSmooth,
+        label = "textFieldScale",
     )
+    val glow by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0f,
+        animationSpec = com.mahfazty.smart.ui.theme.Motion.quick,
+        label = "textFieldGlow",
+    )
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    Box {
+        if (glow > 0f) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = glow }
+                    .border(
+                        width = 2.dp,
+                        brush = Brush.linearGradient(listOf(primary, secondary)),
+                        shape = RoundedCornerShape(14.dp),
+                    ),
+            )
+        }
+        OutlinedTextField(
+            value = value,
+            onValueChange = { if (it.length <= maxLength) onValueChange(it) },
+            modifier = modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = focusScale
+                    scaleY = focusScale
+                    translationX = shake.value
+                }
+                .onFocusChanged { isFocused = it.isFocused },
+            label = { Text(label) },
+            shape = RoundedCornerShape(14.dp),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (phoneKeypad) KeyboardType.Phone else KeyboardType.Text,
+            ),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = com.mahfazty.smart.ui.theme.LocalAppColors.current.border,
+            ),
+        )
+    }
 }
 
 /** زر تبديل خيارين (مصروف/دخل، بنك/كاش...) */
@@ -440,30 +489,44 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
     // إصلاح انعكاس الأيام: الرسم داخل Canvas لا يراعي اتجاه RTL إطلاقاً (إحداثيات فيزيائية دائماً)،
     // بينما صف التسميات تحته يُرتَّب RTL — فكان كل عمود يقف فوق يوم معكوس. نلتقط الاتجاه هنا لنعاكس المواضع.
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    // نبض عمود "اليوم" (آخر عمود) — يجذب العين لأحدث البيانات
-    val pulseAlpha = if (highlightLast && !reduceMotion) {
+    // نبض عمود "اليوم" (آخر عمود) — شفافية + حجم (معايرة 2026) يجذب العين لأحدث البيانات
+    var pulseAlpha = 1f
+    var pulseScale = 1f
+    if (highlightLast && !reduceMotion) {
         val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "todayPulse")
-        inf.animateFloat(
+        pulseAlpha = inf.animateFloat(
             initialValue = 0.55f,
             targetValue = 1f,
             animationSpec = androidx.compose.animation.core.infiniteRepeatable(
                 androidx.compose.animation.core.tween(
-                    700,
+                    600,
                     easing = androidx.compose.animation.core.FastOutSlowInEasing,
                 ),
                 androidx.compose.animation.core.RepeatMode.Reverse,
             ),
             label = "todayAlpha",
         ).value
-    } else 1f
-    // مهارة التنفيذ 4 + مهارة التفكير 10: كل عمود ينمو بتأخير 80ms عن سابقه
+        pulseScale = inf.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.08f,
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                androidx.compose.animation.core.tween(
+                    600,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                ),
+                androidx.compose.animation.core.RepeatMode.Reverse,
+            ),
+            label = "todayScale",
+        ).value
+    }
+    // كل عمود ينمو بتتابع أسرع (35ms — معايرة 2026) ونمو أقصر (420ms)
     val fractions = bars.mapIndexed { index, bar ->
         androidx.compose.animation.core.animateFloatAsState(
             targetValue = if (bar.value > 0) (bar.value / maxValue).toFloat() else 0f,
             animationSpec = if (reduceMotion) androidx.compose.animation.core.snap()
             else androidx.compose.animation.core.tween(
-                durationMillis = 600,
-                delayMillis = index * Motion.STAGGER_STEP_MS,
+                durationMillis = 420,
+                delayMillis = index * 35,
                 easing = Motion.elasticOut,
             ),
             label = "bar$index",
@@ -487,14 +550,30 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
                 else gap + index * (barWidth + gap)
                 val top = chartHeight - h
                 val isToday = highlightLast && index == bars.lastIndex
-                drawRoundRect(
-                    color = if (bar.value > 0) {
-                        if (isToday) color.copy(alpha = pulseAlpha) else color
-                    } else trackColor,
-                    topLeft = Offset(left, top),
-                    size = Size(barWidth, h),
-                    cornerRadius = CornerRadius(barWidth / 2, barWidth / 2),
-                )
+                val barColor = if (bar.value > 0) {
+                    if (isToday) color.copy(alpha = pulseAlpha) else color
+                } else null
+                // تدرج داخل العمود (معايرة 2026): لون كامل أعلى → 70% منه أسفل
+                val barBrush = barColor?.let {
+                    Brush.verticalGradient(listOf(it, it.copy(alpha = 0.7f)), startY = top, endY = top + h)
+                }
+                fun drawBar() {
+                    drawRoundRect(
+                        color = barColor ?: trackColor,
+                        brush = barBrush,
+                        topLeft = Offset(left, top),
+                        size = Size(barWidth, h),
+                        cornerRadius = CornerRadius(barWidth / 2, barWidth / 2),
+                    )
+                }
+                if (isToday && pulseScale != 1f) {
+                    // النبض يتمدد من قاعدة العمود (إيقاع قلب)
+                    scale(pulseScale, pulseScale, pivot = Offset(left + barWidth / 2f, chartHeight)) {
+                        drawBar()
+                    }
+                } else {
+                    drawBar()
+                }
             }
         }
         Row(Modifier.fillMaxWidth()) {
@@ -508,6 +587,42 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
                 )
             }
         }
+    }
+}
+
+/**
+ * ✨ شريط لمعان (shimmer) — نوار ضوء يعبر فوق عنصر تغطيه تماماً (أشرطة التقدم).
+ * يُوضع داخل Box فوق LinearProgressIndicator.
+ */
+@Composable
+fun ShimmerBand(modifier: Modifier = Modifier, alpha: Float = 0.35f) {
+    val reduce = com.mahfazty.smart.ui.theme.rememberReduceMotion()
+    if (reduce) return
+    val inf = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmerBand")
+    val off by inf.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(1200, easing = androidx.compose.animation.core.LinearEasing),
+            androidx.compose.animation.core.RepeatMode.Restart,
+        ),
+        label = "shimmerBandOff",
+    )
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val bounded = constraints.hasBoundedWidth
+        val w = if (bounded) {
+            constraints.maxWidth.value.toFloat() * androidx.compose.ui.platform.LocalDensity.current.density
+        } else 320f
+        androidx.compose.foundation.layout.Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { translationX = (off * 2f - 1f) * w }
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(Color.Transparent, Color.White.copy(alpha = alpha), Color.Transparent),
+                    ),
+                ),
+        )
     }
 }
 

@@ -35,7 +35,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shadow
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +60,7 @@ import com.mahfazty.smart.ui.components.SwingCardEntrance
 import com.mahfazty.smart.ui.components.EmptyState
 import com.mahfazty.smart.ui.components.MoneyText
 import com.mahfazty.smart.ui.components.SectionHeader
+import com.mahfazty.smart.ui.components.ShimmerBand
 import com.mahfazty.smart.ui.components.SoftDivider
 import com.mahfazty.smart.ui.components.TxRow
 import com.mahfazty.smart.ui.dialogs.AddTransactionDialog
@@ -70,6 +73,12 @@ import com.mahfazty.smart.ui.theme.rememberReduceMotion
 import com.mahfazty.smart.ui.viewmodels.HomeUiState
 import com.mahfazty.smart.ui.viewmodels.InsufficientData
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -167,6 +176,16 @@ fun HomeScreen(
             // ===== كارت الرصيد =====
             item {
                 val appColors = LocalAppColors.current
+                // لمعان متحرك (معايرة 2026): نوار ضوء يعبر البطاقة
+                val cardInf = if (!reduceMotion) rememberInfiniteTransition(label = "cardShimmer") else null
+                val shimmerX = cardInf?.let {
+                    it.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart),
+                        label = "cardShimmerX",
+                    ).value
+                } ?: 0f
                 ElasticEntrance(1) {
                 Box(
                     modifier = Modifier
@@ -176,10 +195,37 @@ fun HomeScreen(
                             scaleX = pulseScale.value
                             scaleY = pulseScale.value
                         }
+                        .shadow(10.dp, RoundedCornerShape(24.dp))
                         .clip(RoundedCornerShape(24.dp))
                         .background(animatedGradient(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary))
                         .padding(18.dp),
                 ) {
+                    // إضاءة شعاعية (معايرة 2026): وميض زجاجي من أعلى البطاقة
+                    androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                                center = Offset(size.width * 0.22f, size.height * 0.18f),
+                                radius = 700f,
+                            ),
+                            radius = 700f,
+                            center = Offset(size.width * 0.22f, size.height * 0.18f),
+                        )
+                    }
+                    if (!reduceMotion) {
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .graphicsLayer { translationX = shimmerX * 1400f - 700f }
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(Color.Transparent, Motion.shimmerColor, Color.Transparent),
+                                        start = Offset(0f, 0f),
+                                        end = Offset(1400f, 500f),
+                                    ),
+                                ),
+                        )
+                    }
                     Column {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -285,27 +331,39 @@ fun HomeScreen(
                 }
             }
 
-            // ===== تحذيرات الحدود (تنزلق من الأعلى — مهارة التفكير 12) =====
+            // ===== تحذيرات الحدود (انزلاق + ارتداد — معايرة 2026: برتقالي + أيقونة) =====
             item {
                 AnimatedVisibility(
                     visible = state.warnings.isNotEmpty(),
-                    enter = slideInVertically(if (reduceMotion) snap() else Motion.enterOffset) { -it } +
-                        fadeIn(if (reduceMotion) snap() else Motion.enter),
+                    enter = if (reduceMotion) {
+                        fadeIn(snap())
+                    } else {
+                        slideInVertically(Motion.enterOffset) { -it } +
+                            fadeIn(Motion.enter) +
+                            scaleIn(initialScale = 0.8f, animationSpec = Motion.springBounce)
+                    },
                     exit = slideOutVertically(if (reduceMotion) snap() else Motion.exitOffset) { -it } +
                         fadeOut(if (reduceMotion) snap() else Motion.exit),
                 ) {
                     Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                         state.warnings.forEach { w ->
-                            Text(
-                                w,
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(LocalAppColors.current.chipBg)
+                                    .background(Color(0xFFFF9800).copy(alpha = 0.15f))
                                     .padding(10.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("⚠️", fontSize = 16.sp)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    w,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
                     }
                 }
@@ -528,15 +586,30 @@ private fun GoalMiniCard(goal: GoalWithSaved, currency: String, hidden: Boolean)
                 animationSpec = Motion.springSmooth,
                 label = "miniGoalProgress",
             )
-            androidx.compose.material3.LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = LocalAppColors.current.chipBg,
-            )
+            Box {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = LocalAppColors.current.chipBg,
+                )
+                ShimmerBand()
+                // توهج عند الاكتمال 100% (معايرة 2026)
+                if (goal.progress >= 1f) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(Color(0xFF4CAF50).copy(alpha = 0.3f), Color.Transparent),
+                                ),
+                            ),
+                    )
+                }
+            }
         }
     }
 }

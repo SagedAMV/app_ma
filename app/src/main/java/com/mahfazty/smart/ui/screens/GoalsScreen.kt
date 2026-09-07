@@ -1,5 +1,6 @@
 package com.mahfazty.smart.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.animateFloatAsState
@@ -47,12 +50,14 @@ import com.mahfazty.smart.ui.components.ConfirmDialog
 import com.mahfazty.smart.ui.components.EmptyState
 import com.mahfazty.smart.ui.components.ConfettiOverlay
 import com.mahfazty.smart.ui.components.ElasticEntrance
+import com.mahfazty.smart.ui.components.ShimmerBand
 import com.mahfazty.smart.ui.components.bounceClick
 import com.mahfazty.smart.ui.dialogs.ContributeDialog
 import com.mahfazty.smart.ui.dialogs.GoalDialog
 import com.mahfazty.smart.ui.dialogs.InsufficientSheet
 import com.mahfazty.smart.ui.theme.LocalAppColors
 import com.mahfazty.smart.ui.theme.Motion
+import com.mahfazty.smart.ui.theme.rememberReduceMotion
 import com.mahfazty.smart.ui.viewmodels.GoalsUiState
 import com.mahfazty.smart.ui.viewmodels.InsufficientData
 
@@ -77,6 +82,17 @@ fun GoalsScreen(
     var contributing by remember { mutableStateOf<Goal?>(null) }
     var contributeAdd by remember { mutableStateOf(true) }
     var deleting by remember { mutableStateOf<Goal?>(null) }
+
+    // اهتزاز القائمة عند فشل المساهمة (معايرة 2026): تنبيه جسدي ناعم بدل التجاهل
+    val reduceMotion = rememberReduceMotion()
+    val failShake = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(insufficient) {
+        if (insufficient != null && !reduceMotion) {
+            failShake.snapTo(0f)
+            kotlinx.coroutines.delay(250)
+            failShake.animateTo(targetValue = 1f, animationSpec = Motion.softShake)
+        }
+    }
 
     // 🎉 احتفال عند إتمام هدف (عبور 100%) — أول ظهور لا يحتسب حتى لا نحتفل عند فتح الشاشة
     var celebrateKey by remember { mutableStateOf(0L) }
@@ -109,7 +125,8 @@ fun GoalsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .androidx.compose.ui.graphics.graphicsLayer { translationX = failShake.value },
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 90.dp),
         ) {
             item {
@@ -242,15 +259,30 @@ private fun GoalCard(
                 animationSpec = Motion.springSmooth,
                 label = "goalProgress",
             )
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(10.dp)
-                    .clip(RoundedCornerShape(5.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = LocalAppColors.current.chipBg,
-            )
+            Box {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = LocalAppColors.current.chipBg,
+                )
+                ShimmerBand()
+                // توهج أخضر عند الاكتمال 100% (معايرة 2026)
+                if (goal.progress >= 1f) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(Color(0xFF4CAF50).copy(alpha = 0.3f), Color.Transparent),
+                                ),
+                            ),
+                    )
+                }
+            }
             Spacer(Modifier.height(6.dp))
             Text(
                 "${(goal.progress * 100).toInt()}% مكتمل",
