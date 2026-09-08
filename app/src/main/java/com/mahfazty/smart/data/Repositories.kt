@@ -248,7 +248,7 @@ class WalletRepository(
         }
         db.transactionDao().update(updated.toEntity())
         // sec-6 + تقرير الفحص: توثيق تعديل عمليات المحفظة (قبل/بعد)
-        logAudit("تعديل عملية محفظة", "قبل: ${txSummary(old.toDomain())} | بعد: ${txSummary(updated)}")
+        logAudit("تعديل عملية محفظة", "قبل: ${txSummary(old)} | بعد: ${txSummary(updated)}")  // old من نوع Transaction أصلاً — toDomain() ثانية كان خطأ
         return null
     }
 
