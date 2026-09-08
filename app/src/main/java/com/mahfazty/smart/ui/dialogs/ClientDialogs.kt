@@ -634,13 +634,13 @@ private fun MaterialRow(
             value = m.name,
             onValueChange = { onChange(m.copy(name = it)) },
             label = "الصنف",
-            modifier = Modifier.weight(1.4f),
+            modifier = Modifier.weight(2f),
         )
         AppTextField(
             value = if (m.qty == 0.0) "" else Money.input(m.qty),
             onValueChange = { onChange(m.copy(qty = Money.parse(it))) },
             label = "الكمية",
-            modifier = Modifier.weight(0.9f),
+            modifier = Modifier.weight(1f),
         )
         AppTextField(
             value = if (m.unitPrice == 0.0) "" else Money.input(m.unitPrice),

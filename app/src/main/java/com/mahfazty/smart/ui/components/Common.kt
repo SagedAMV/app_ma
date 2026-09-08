@@ -388,7 +388,10 @@ fun AppTextField(
     )
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
-    Box {
+    // إصلاح خلل تخطيط صف المواد: الـ modifier المُمرَّر (وأهمه weight من RowScope)
+    // يجب أن يصل للحاوية الخارجية المباشرة — وإلا يبقى وزن الحقل غير مرئي للـ Row
+    // ويستولي fillMaxWidth الداخلي على كامل العرض (يدفن بقية الحقول خارج الشاشة).
+    Box(modifier = modifier) {
         if (glow > 0f) {
             Box(
                 Modifier
@@ -404,7 +407,7 @@ fun AppTextField(
         OutlinedTextField(
             value = value,
             onValueChange = { if (it.length <= maxLength) onValueChange(it) },
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .graphicsLayer {
                     scaleX = focusScale
