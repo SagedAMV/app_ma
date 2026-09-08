@@ -19,6 +19,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -47,9 +48,11 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.SpanStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import com.mahfazty.smart.ui.theme.Motion
 import com.mahfazty.smart.ui.theme.rememberReduceMotion
@@ -385,7 +388,8 @@ fun AnimatedNumber(
     var counting by remember { mutableStateOf(false) }
     var lastTarget by remember { mutableStateOf(target) }
     LaunchedEffect(target) {
-        val diff = (target - animated.value).abs()
+        // abs دالة عليا وليست امتداداً — الاستدعاء الصحيح abs(x) لا x.abs()
+        val diff = abs(target.toFloat() - animated.value)
         // مدة متغيرة: فرق صغير = عدّ سريع، فرق كبير = حتى 500ms
         val duration = (200 + (diff / 100f).coerceIn(0f, 300f)).toInt()
         if (!reduceMotion && diff > 0.001) counting = true
@@ -519,15 +523,17 @@ fun TypewriterReveal(
     }
     val p = if (reduce) 1f else progress.value
     val ann = remember(text, p) {
-        val a = AnnotatedString(text)
-        if (p < 1f) {
-            val len = text.length
-            for (i in 0 until len) {
-                val chAlpha = (p * (len + 4f) - i).coerceIn(0f, 1f)
-                a.addStyle(SpanStyle(color = color.copy(alpha = chAlpha)), i, i + 1)
+        // AnnotatedString ثابتة لا تحوي addStyle — البناء الصحيح عبر buildAnnotatedString
+        buildAnnotatedString {
+            append(text)
+            if (p < 1f) {
+                val len = text.length
+                for (i in 0 until len) {
+                    val chAlpha = (p * (len + 4f) - i).coerceIn(0f, 1f)
+                    addStyle(SpanStyle(color = color.copy(alpha = chAlpha)), i, i + 1)
+                }
             }
         }
-        a
     }
     Text(ann, style = style, color = color, modifier = modifier)
 }
@@ -546,12 +552,18 @@ fun MorphTransition(
     content: @Composable () -> Unit,
 ) {
     val p = progress.coerceIn(0f, 1f)
-    val shape: Shape = remember(from, to, p) {
+    val density = LocalDensity.current
+    val shape: Shape = remember(from, to, p, density) {
         val f = from as? RoundedCornerShape
         val t = to as? RoundedCornerShape
         if (f != null && t != null) {
-            val lerpCorner = { a: CornerRadius, b: CornerRadius ->
-                CornerRadius(a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p)
+            // زوايا RoundedCornerShape نوعها CornerSize لا CornerRadius — نُدرّج بالبكسل عبر Density
+            // (مرجع 100px يؤثر فقط على الزوايا المئوية %؛ زوايا dp/px تُقيَّم بدقة تامة)
+            val reference = Size(100f, 100f)
+            val lerpCorner = { a: CornerSize, b: CornerSize ->
+                val ra = a.toPx(reference, density)
+                val rb = b.toPx(reference, density)
+                CornerSize(ra + (rb - ra) * p)
             }
             RoundedCornerShape(
                 topStart = lerpCorner(f.topStart, t.topStart),

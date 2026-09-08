@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -558,13 +559,15 @@ fun BarChart(bars: List<DayBar>, color: Color, height: Int = 130, highlightLast:
                     Brush.verticalGradient(listOf(it, it.copy(alpha = 0.7f)), startY = top, endY = top + h)
                 }
                 fun drawBar() {
-                    drawRoundRect(
-                        color = barColor ?: trackColor,
-                        brush = barBrush,
-                        topLeft = Offset(left, top),
-                        size = Size(barWidth, h),
-                        cornerRadius = CornerRadius(barWidth / 2, barWidth / 2),
-                    )
+                    // drawRoundRect لا يقبل color وbrush معاً — التدرج إن وُجد، وإلا اللون الصلب
+                    val topLeft = Offset(left, top)
+                    val size = Size(barWidth, h)
+                    val radius = CornerRadius(barWidth / 2, barWidth / 2)
+                    if (barBrush != null) {
+                        drawRoundRect(brush = barBrush, topLeft = topLeft, size = size, cornerRadius = radius)
+                    } else {
+                        drawRoundRect(color = barColor ?: trackColor, topLeft = topLeft, size = size, cornerRadius = radius)
+                    }
                 }
                 if (isToday && pulseScale != 1f) {
                     // النبض يتمدد من قاعدة العمود (إيقاع قلب)
@@ -610,9 +613,10 @@ fun ShimmerBand(modifier: Modifier = Modifier, alpha: Float = 0.35f) {
     )
     androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
         val bounded = constraints.hasBoundedWidth
-        val w = if (bounded) {
-            constraints.maxWidth.value.toFloat() * androidx.compose.ui.platform.LocalDensity.current.density
-        } else 320f
+            // maxWidth بالبكسل أصلاً — لا حاجة لضربه في الكثافة (كان سيضخّم مدى اللمعان خطأً)
+            val w = if (bounded) {
+                constraints.maxWidth.toFloat()
+            } else 320f
         androidx.compose.foundation.layout.Box(
             Modifier
                 .fillMaxSize()

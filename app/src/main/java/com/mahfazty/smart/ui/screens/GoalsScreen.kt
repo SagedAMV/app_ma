@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -126,7 +127,7 @@ fun GoalsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .androidx.compose.ui.graphics.graphicsLayer { translationX = failShake.value },
+                .graphicsLayer { translationX = failShake.value },
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 90.dp),
         ) {
             item {
