@@ -58,3 +58,57 @@ object DuesNotifier {
         )
     }
 }
+
+/**
+ * تذكير النسخ الاحتياطي (إضافة 10.1 من تقرير الفحص).
+ *
+ * إشعار محلي واحد بمعرّف ثابت (102) وقناة «backup» — ذكية (10.5):
+ * تظهر إذا لم تؤخذ نسخة أبداً، أو مضى عليها أكثر من 7 أيام، أو تراكمت
+ * 50+ عملية جديدة بعدها.
+ */
+object BackupNotifier {
+    const val CHANNEL_ID = "backup"
+    const val NOTIFICATION_ID = 102
+
+    /**
+     * بث (أو تحديث) إشعار تذكير النسخ الاحتياطي.
+     * @param days عدد الأيام منذ آخر نسخة (null إذا لم تؤخذ نسخة أبداً)
+     * @param newOps عدد العمليات الجديدة منذ آخر نسخة
+     */
+    fun post(context: Context, days: Int?, newOps: Int) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "تذكير النسخ الاحتياطي", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "تنبيه دوري لأخذ نسخة احتياطية من بياناتك"
+                },
+            )
+        }
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pending = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val title = "💾 تذكير نسخة احتياطية"
+        val body = when {
+            days == null -> "لم تأخذ أي نسخة احتياطية بعد — صدّر بياناتك من الإعدادات قبل فوات الأوان"
+            newOps >= 50 -> "تراكمت $newOps عملية منذ آخر نسخة — حان وقت التصدير"
+            else -> "مضى $days يوم على آخر نسخة احتياطية — حان وقت التصدير"
+        }
+        nm.notify(
+            NOTIFICATION_ID,
+            NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setAutoCancel(true)
+                .setContentIntent(pending)
+                .build(),
+        )
+    }
+}

@@ -148,7 +148,7 @@ fun AddTransactionDialog(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            SheetFieldEntrance(4) { AppTextField(note, { note = it }, "ملاحظة (اختياري)") }
+            SheetFieldEntrance(4) { AppTextField(note, { note = it }, "ملاحظة (اختياري)", maxLength = 200) }
             Spacer(Modifier.height(16.dp))
             SheetFieldEntrance(5) {
                 Button(
@@ -236,7 +236,7 @@ fun EditTransactionDialog(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            AppTextField(note, { note = it }, "ملاحظة")
+            AppTextField(note, { note = it }, "ملاحظة", maxLength = 200)
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {
@@ -406,18 +406,34 @@ fun TransferDialog(
             Spacer(Modifier.height(14.dp))
             AmountField(amount, { amount = it }, "المبلغ", settings.currency)
             Spacer(Modifier.height(12.dp))
-            AppTextField(note, { note = it }, "ملاحظة (اختياري)")
+            AppTextField(note, { note = it }, "ملاحظة (اختياري)", maxLength = 200)
             Spacer(Modifier.height(16.dp))
+            // إضافة 13.2 من تقرير الفحص: تأكيد صريح قبل تنفيذ التحويل بين الصناديق
+            var confirmStep by remember { mutableStateOf(false) }
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) onSave(direction, amt, note.ifBlank { null })
+                    if (amt > 0) confirmStep = true
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .bounceClick(),
                 shape = RoundedCornerShape(14.dp),
             ) { Text("تأكيد التحويل ✅") }
+            if (confirmStep) {
+                val amt = Money.parse(amount)
+                com.mahfazty.smart.ui.components.ConfirmDialog(
+                    title = "تنفيذ التحويل؟",
+                    message = "سيتم ${if (direction == "bank_to_cash") "سحب ${Money.fmt(amt)} ${settings.currency} من ${settings.bankName} إلى ${settings.cashName}" else "إيداع ${Money.fmt(amt)} ${settings.currency} من ${settings.cashName} إلى ${settings.bankName}"}.",
+                    confirmText = "تنفيذ",
+                    danger = false,
+                    onConfirm = {
+                        confirmStep = false
+                        onSave(direction, amt, note.ifBlank { null })
+                    },
+                    onDismiss = { confirmStep = false },
+                )
+            }
             Text(
                 "قاعدة: لا يمكن أن يصبح أي صندوق سالباً",
                 style = MaterialTheme.typography.labelSmall,
@@ -550,6 +566,8 @@ fun ContributeDialog(
 ) {
     var mode by remember { mutableStateOf(add) }
     var amount by remember { mutableStateOf(if (initialAmount != null && initialAmount > 0) Money.input(initialAmount) else "") }
+    // إضافة 13.1 من تقرير الفحص: تأكيد قبل تنفيذ إضافة/سحب الأهداف
+    var confirmStep by remember { mutableStateOf(false) }
 
     AppSheet(title = if (mode) "إضافة للهدف" else "سحب من الهدف", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
@@ -572,13 +590,28 @@ fun ContributeDialog(
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) onSave(mode, amt)
+                    if (amt > 0) confirmStep = true
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .bounceClick(),
                 shape = RoundedCornerShape(14.dp),
             ) { Text(if (mode) "إضافة الآن ✅" else "تأكيد السحب") }
+            if (confirmStep) {
+                val amt = Money.parse(amount)
+                com.mahfazty.smart.ui.components.ConfirmDialog(
+                    title = if (mode) "إضافة للهدف؟" else "سحب من الهدف؟",
+                    message = "🎯 $goalName\nالمبلغ: ${Money.fmt(amt)} $currency\n\n" +
+                        if (mode) "سيُخصم من البنك ويُضاف لمدخر الهدف" else "سيُسحب من مدخر الهدف ويعود إلى البنك",
+                    confirmText = "تنفيذ",
+                    danger = false,
+                    onConfirm = {
+                        confirmStep = false
+                        onSave(mode, amt)
+                    },
+                    onDismiss = { confirmStep = false },
+                )
+            }
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -598,6 +631,7 @@ fun SavingsAmountDialog(
     onSave: (Double) -> Unit,
 ) {
     var amount by remember { mutableStateOf(if (initialAmount != null && initialAmount > 0) Money.input(initialAmount) else "") }
+    var confirmStep by remember { mutableStateOf(false) }
     AppSheet(title = title, onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             AmountField(amount, { amount = it }, "المبلغ", currency)
@@ -610,13 +644,28 @@ fun SavingsAmountDialog(
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) onSave(amt)
+                    if (amt > 0) confirmStep = true
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .bounceClick(),
                 shape = RoundedCornerShape(14.dp),
             ) { Text("تأكيد ✅") }
+            // إضافة 13.1 من تقرير الفحص: تأكيد المبلغ قبل تنفيذ حركات الادخار
+            if (confirmStep) {
+                val amt = Money.parse(amount)
+                com.mahfazty.smart.ui.components.ConfirmDialog(
+                    title = "تنفيذ العملية؟",
+                    message = "$title\nالمبلغ: ${Money.fmt(amt)} $currency" + if (note.isBlank()) "" else "\n\n$note",
+                    confirmText = "تنفيذ",
+                    danger = false,
+                    onConfirm = {
+                        confirmStep = false
+                        onSave(amt)
+                    },
+                    onDismiss = { confirmStep = false },
+                )
+            }
             Spacer(Modifier.height(8.dp))
         }
     }

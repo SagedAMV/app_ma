@@ -72,6 +72,8 @@ dependencies {
 
     // قفل تبويب العملاء (بصمة/رمز الجهاز) — إصلاح sec-2
     implementation(libs.androidx.biometric)
+    // إضافة 3.4 من تقرير الفحص: تذكير يومي بالديون المستحقة (WorkManager)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

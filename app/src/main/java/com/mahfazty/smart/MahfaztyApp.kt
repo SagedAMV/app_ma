@@ -10,6 +10,7 @@ import com.mahfazty.smart.data.SettingsRepository
 import com.mahfazty.smart.data.WalletRepository
 import com.mahfazty.smart.data.db.AppDatabase
 import com.mahfazty.smart.ui.util.DuesNotifier
+import com.mahfazty.smart.ui.util.DuesWorker
 
 /**
  * نقطة دخول التطبيق + حاوية التبعيات اليدوية (Manual DI).
@@ -24,6 +25,8 @@ class MahfaztyApp : Application() {
         container = AppContainer(this)
         // إصلاح data-1: قناة إشعارات تذكير استحقاق الديون — تُنشأ مرة واحدة عند بدء التطبيق
         createDuesChannel()
+        // إضافة 3.4 من تقرير الفحص: تذكير يومي بالديون المستحقة حتى دون فتح التطبيق
+        DuesWorker.schedule(this)
     }
 
     private fun createDuesChannel() {

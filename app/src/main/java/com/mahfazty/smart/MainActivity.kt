@@ -157,16 +157,23 @@ private fun AppRoot(mainViewModel: MainViewModel) {
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) mainViewModel.checkDueNotifications(context)
+        // إضافة 10.1 من تقرير الفحص: تذكير النسخ الاحتياطي عند توفر الإذن
+        if (granted) mainViewModel.checkBackupReminder(context)
     }
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33) {
             val granted = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
-            if (granted) mainViewModel.checkDueNotifications(context)
-            else requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            if (granted) {
+                mainViewModel.checkDueNotifications(context)
+                mainViewModel.checkBackupReminder(context)
+            } else {
+                requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         } else {
             // قبل أندرويد 13 لا يوجد إذن تشغيل للإشعارات المحلية
             mainViewModel.checkDueNotifications(context)
+            mainViewModel.checkBackupReminder(context)
         }
     }
 
@@ -221,7 +228,7 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 val vm: HomeViewModel = viewModel(factory = viewModelFactory {
                     initializer {
                         val app = this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as MahfaztyApp
-                        HomeViewModel(app.container.walletRepository, app.container.settingsRepository)
+                        HomeViewModel(app.container.walletRepository, app.container.settingsRepository, app.container.clientsRepository)
                     }
                 })
                 val state by vm.state.collectAsStateWithLifecycle()
@@ -446,10 +453,14 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     }
                 })
                 val state by vm.state.collectAsStateWithLifecycle()
+                // إضافة 5.3/3.5: فلتر حالة العملاء + عملة شاشة العملاء
+                val clientsSettings by mainViewModel.settings.collectAsStateWithLifecycle()
                 ClientsScreen(
                     state = state,
                     toast = vm.toast,
+                    currency = clientsSettings.currency,
                     onSetQuery = vm::setQuery,
+                    onSetStatusFilter = vm::setStatusFilter,
                     onAddClient = vm::addClient,
                     onOpenClient = { id -> navController.navigate(Routes.clientDetail(id)) },
                 )
@@ -511,6 +522,8 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     onDeleteClient = vm::deleteClient,
                     onUpdateAccount = vm::updateAccount,
                     onDeleteAccount = vm::deleteAccount,
+                    // إضافة 12.2: سحب الرصيد الحقيقي ثم حذف الحساب
+                    onWithdrawAndDeleteAccount = vm::withdrawAndDeleteAccount,
                     onOpenAccount = { id -> navController.navigate(Routes.accountDetail(clientId, id)) },
                 )
             }
@@ -576,6 +589,9 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                 val filterQuery by vm.query.collectAsStateWithLifecycle()
                 val filterType by vm.opTypeFilter.collectAsStateWithLifecycle()
                 val filterPeriod by vm.opPeriod.collectAsStateWithLifecycle()
+                // إضافة 3.1/15.3: فلتر الاستحقاق + الترتيب
+                val dueOnly by vm.dueOnly.collectAsStateWithLifecycle()
+                val sortMode by vm.sortMode.collectAsStateWithLifecycle()
                 val opsContext = LocalContext.current
                 AccountOpsScreen(
                     clientData = clientData,
@@ -598,6 +614,10 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     onSetFilterQuery = vm::setQuery,
                     onSetFilterType = vm::setOpTypeFilter,
                     onSetFilterPeriod = vm::setOpPeriod,
+                    dueOnly = dueOnly,
+                    onSetDueOnly = vm::setDueOnly,
+                    sortMode = sortMode,
+                    onSetSortMode = vm::setSortMode,
                     onBack = { navController.popBackStack() },
                     onToggleSelect = vm::toggleSelect,
                     onClearSelection = vm::clearSelection,
@@ -608,6 +628,8 @@ private fun AppRoot(mainViewModel: MainViewModel) {
                     onMarkInvoiceDelivered = vm::markInvoiceDelivered,
                     onUpdateAccount = vm::updateAccount,
                     onDeleteAccount = vm::deleteAccount,
+                    // إضافة 12.2: سحب الرصيد الحقيقي ثم حذف الحساب
+                    onWithdrawAndDeleteAccount = vm::withdrawAndDeleteAccount,
                     onAdjustReal = vm::adjustReal,
                     onExportCsv = { vm.exportAccountCsv(opsContext) },
                     onFundReal = vm::fundReal,

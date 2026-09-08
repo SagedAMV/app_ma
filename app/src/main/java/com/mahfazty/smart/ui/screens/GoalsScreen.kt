@@ -23,8 +23,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,7 +69,7 @@ fun GoalsScreen(
     state: GoalsUiState,
     insufficient: InsufficientData?,
     pending: com.mahfazty.smart.ui.flow.PendingWalletAction?,
-    toast: kotlinx.coroutines.flow.SharedFlow<String>,
+    toast: kotlinx.coroutines.flow.SharedFlow<com.mahfazty.smart.ui.viewmodels.ToastMsg>,
     onAddGoal: (String, Double, Double, String) -> Unit,
     onContribute: (Goal, Boolean, Double) -> Unit,
     onDeleteGoal: (Goal) -> Unit,
@@ -77,7 +79,17 @@ fun GoalsScreen(
     onClearPending: () -> Unit,
 ) {
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(Unit) { toast.collect { snackbar.showSnackbar(it) } }
+    // إضافة 14.1: توست مع إجراء «تراجع» لحذف الأهداف
+    LaunchedEffect(Unit) {
+        toast.collect { msg ->
+            val result = snackbar.showSnackbar(
+                message = msg.text,
+                actionLabel = msg.actionLabel ?: "",
+                duration = if (msg.actionLabel != null) SnackbarDuration.Long else SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) msg.onAction?.invoke()
+        }
+    }
 
     var showAdd by remember { mutableStateOf(false) }
     var contributing by remember { mutableStateOf<Goal?>(null) }

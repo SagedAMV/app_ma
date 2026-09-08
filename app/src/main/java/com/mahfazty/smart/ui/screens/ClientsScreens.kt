@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -108,10 +111,15 @@ private val InvoiceOrange = Color(0xFFF57C00)
 fun ClientsScreen(
     state: ClientsUiState,
     toast: kotlinx.coroutines.flow.SharedFlow<com.mahfazty.smart.ui.viewmodels.ToastMsg>,
+    /** إضافة 3.5: عملة العرض في نافذة المستحقات */
+    currency: String,
     onSetQuery: (String) -> Unit,
     onAddClient: (String, String?, String?, String) -> Unit,
     onOpenClient: (Long) -> Unit,
+    /** إضافة 5.3 من تقرير الفحص: فلتر حالة العميل */
+    onSetStatusFilter: (com.mahfazty.smart.ui.viewmodels.ClientStatusFilter) -> Unit,
 ) {
+    var showDueDebts by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
         toast.collect { msg ->
@@ -192,6 +200,55 @@ fun ClientsScreen(
                 }
                 }
             }
+            // ===== إضافة 5.3/5.4 من تقرير الفحص: فلتر الحالة مع عدادات كل حالة =====
+            item {
+                ElasticEntrance(3) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    StatusFilterChip("الكل", state.statusFilter == com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.ALL) {
+                        onSetStatusFilter(com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.ALL)
+                    }
+                    StatusFilterChip("🟢 نشط (${state.activeCount})", state.statusFilter == com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.ACTIVE) {
+                        onSetStatusFilter(com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.ACTIVE)
+                    }
+                    StatusFilterChip("🟠 موقوف (${state.stoppedCount})", state.statusFilter == com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.STOPPED) {
+                        onSetStatusFilter(com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.STOPPED)
+                    }
+                    StatusFilterChip("🔴 قائمة سوداء (${state.blockedCount})", state.statusFilter == com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.BLOCKED) {
+                        onSetStatusFilter(com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.BLOCKED)
+                    }
+                }
+                }
+            }
+            // ===== إضافة 3.5 من تقرير الفحص: زر الديون المستحقة/المتأخرة عبر كل العملاء =====
+            if (state.dueDebts.isNotEmpty()) {
+                item {
+                    ElasticEntrance(4) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(LocalAppColors.current.red.copy(alpha = 0.12f))
+                                .border(1.5.dp, LocalAppColors.current.red, RoundedCornerShape(20.dp))
+                                .clickable { showDueDebts = true }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                "⏰ ديون مستحقة/متأخرة (${state.dueDebts.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = LocalAppColors.current.red,
+                            )
+                        }
+                    }
+                    }
+                }
+            }
             if (state.clients.isEmpty()) {
                 item { EmptyState("👥", "لا يوجد عملاء") }
             } else {
@@ -215,6 +272,97 @@ fun ClientsScreen(
                 onAddClient(name, phone, photo, status)
             },
         )
+    }
+
+    // ===== إضافة 3.5 من تقرير الفحص: نافذة الديون المستحقة/المتأخرة عبر كل العملاء =====
+    if (showDueDebts) {
+        DueDebtsDialog(debts = state.dueDebts, currency = currency, onDismiss = { showDueDebts = false })
+    }
+}
+
+/** إضافة 5.3: رقاقة فلتر حالة العميل */
+@Composable
+private fun StatusFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else LocalAppColors.current.border,
+                shape = RoundedCornerShape(20.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) MaterialTheme.colorScheme.primary else LocalAppColors.current.muted,
+        )
+    }
+}
+
+/** إضافة 3.5: نافذة تجميعية لكل الديون المستحقة/المتأخرة (عميل • حساب • مبلغ • استحقاق) */
+@Composable
+private fun DueDebtsDialog(
+    debts: List<com.mahfazty.smart.ui.viewmodels.DueDebtSummary>,
+    currency: String,
+    onDismiss: () -> Unit,
+) {
+    com.mahfazty.smart.ui.components.AppDialog(onDismiss = onDismiss) {
+        Column(Modifier.padding(20.dp)) {
+            Text("⏰ الديون المستحقة والمتأخرة", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "${debts.size} دين — من كل العملاء، الأقرب استحقاقاً أولاً",
+                style = MaterialTheme.typography.labelSmall,
+                color = LocalAppColors.current.muted,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+            Column(
+                Modifier
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                debts.forEach { d ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${d.clientName} • ${d.accountName}",
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                            )
+                            Text(
+                                if (d.overdue) "⚠️ متأخرة منذ ${com.mahfazty.smart.domain.Dates.short(d.dueDate)}"
+                                else "تستحق ${com.mahfazty.smart.domain.Dates.short(d.dueDate)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (d.overdue) LocalAppColors.current.red else LocalAppColors.current.muted,
+                            )
+                        }
+                        Text(
+                            "${Money.fmt(d.amount)} $currency",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (d.overdue) LocalAppColors.current.red else MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("إغلاق") }
+        }
     }
 }
 
@@ -318,6 +466,8 @@ fun ClientAccountsScreen(
     onDeleteClient: (Long) -> Unit,
     onUpdateAccount: (ClientAccount) -> Unit,
     onDeleteAccount: (Long) -> Unit,
+    /** إضافة 12.2 من تقرير الفحص: سحب الرصيد الحقيقي ثم حذف الحساب */
+    onWithdrawAndDeleteAccount: (Long) -> Unit,
     onOpenAccount: (Long) -> Unit,
 ) {
     val snackbar = remember { SnackbarHostState() }
@@ -559,6 +709,11 @@ fun ClientAccountsScreen(
             message = msg,
             onConfirm = { deletingAccount = null; onDeleteAccount(acc.id) },
             onDismiss = { deletingAccount = null },
+            // إضافة 12.2 من تقرير الفحص: سحب الرصيد إلى البنك ثم الحذف — دفعة واحدة
+            extraText = if (acc.realBalance > 0) "💵 سحب ثم حذف" else null,
+            onExtra = if (acc.realBalance > 0) {
+                { deletingAccount = null; onWithdrawAndDeleteAccount(acc.id) }
+            } else null,
         )
     }
 }
@@ -650,6 +805,12 @@ fun AccountOpsScreen(
     onSetFilterQuery: (String) -> Unit,
     onSetFilterType: (com.mahfazty.smart.ui.viewmodels.OpTypeFilter) -> Unit,
     onSetFilterPeriod: (com.mahfazty.smart.ui.viewmodels.OpPeriod) -> Unit,
+    /** إضافة 3.1 من تقرير الفحص: فلتر الديون المستحقة/المتأخرة */
+    dueOnly: Boolean,
+    onSetDueOnly: (Boolean) -> Unit,
+    /** إضافة 15.3 من تقرير الفحص: ترتيب عمليات الحساب */
+    sortMode: com.mahfazty.smart.ui.viewmodels.OpSortMode,
+    onSetSortMode: (com.mahfazty.smart.ui.viewmodels.OpSortMode) -> Unit,
     onBack: () -> Unit,
     onToggleSelect: (Long) -> Unit,
     onClearSelection: () -> Unit,
@@ -660,6 +821,8 @@ fun AccountOpsScreen(
     onMarkInvoiceDelivered: (ClientOperation) -> Unit,
     onUpdateAccount: (ClientAccount) -> Unit,
     onDeleteAccount: (Long) -> Unit,
+    /** إضافة 12.2 من تقرير الفحص: سحب الرصيد الحقيقي ثم حذف الحساب */
+    onWithdrawAndDeleteAccount: (Long) -> Unit,
     /** إصلاح fin-4: تسوية رصيد حقيقي (مبلغ، سبب) */
     onAdjustReal: (Double, String) -> Unit,
     /** إصلاح act-4: تصدير كشف كامل CSV */
@@ -716,6 +879,16 @@ fun AccountOpsScreen(
 
     // ===== إصلاح act-3: بحث + فلتر نوع + فلتر مدى زمني =====
     val now = System.currentTimeMillis()
+
+    // ===== إضافة 3.1 من تقرير الفحص: عداد الديون المستحقة/المتأخرة =====
+    val endOfToday = Calendar.getInstance().apply {
+        timeInMillis = now
+        add(Calendar.DAY_OF_YEAR, 1)
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val dueCount = ops.count { it.type == OpType.DEBT && it.dueDate != null && it.dueDate < endOfToday }
+
     val dayMs = 86_400_000L
     val periodCutoff: Long? = when (filterPeriod) {
         com.mahfazty.smart.ui.viewmodels.OpPeriod.ALL -> null
@@ -741,8 +914,19 @@ fun AccountOpsScreen(
         val matchesPeriod = periodCutoff == null || op.date >= periodCutoff
         matchesQuery && matchesType && matchesPeriod
     }
+    // ===== إضافة 3.1/3.2/15.3 من تقرير الفحص: فلتر الاستحقاق + الترتيب =====
+    // فلتر «مستحق»: ديون عليه بتاريخ استحقاق حان أو تجاوز (الأقرب استحقاقاً أولاً — 3.2)
+    val dueFiltered = if (dueOnly) {
+        queryFiltered.filter { it.type == OpType.DEBT && it.dueDate != null && it.dueDate < endOfToday }.sortedBy { it.dueDate }
+    } else queryFiltered
+    // ترتيب عام (15.3): الافتراضي الأحدث أولاً (من الاستعلام)، أو الأكبر مبلغاً
+    val sortedOps = when {
+        dueOnly -> dueFiltered
+        sortMode == com.mahfazty.smart.ui.viewmodels.OpSortMode.AMOUNT_DESC -> dueFiltered.sortedByDescending { it.amount }
+        else -> dueFiltered
+    }
     // فواتير معلقة فقط (فلتر أصلي) فوق نتائج البحث
-    val shownOps = if (pendingInvoicesOnly) queryFiltered.filter { it.isInvoice && !it.invoiceDelivered } else queryFiltered
+    val shownOps = if (pendingInvoicesOnly) sortedOps.filter { it.isInvoice && !it.invoiceDelivered } else sortedOps
 
     /** إصلاح act-4: بناء نص الكشف — آخر 10 أو كامل */
     fun buildStatement(limit: Int): String {
@@ -846,6 +1030,32 @@ fun AccountOpsScreen(
                         }
                     }
                 }
+                }
+            }
+            // ===== إضافة 5.1/5.2 من تقرير الفحص: لافتة تحذير للعميل الموقوف/القائمة السوداء =====
+            val clientStatus = client?.status
+            if (clientStatus == com.mahfazty.smart.domain.model.ClientStatus.STOPPED ||
+                clientStatus == com.mahfazty.smart.domain.model.ClientStatus.BLOCKED
+            ) {
+                item {
+                    val blocked = clientStatus == com.mahfazty.smart.domain.model.ClientStatus.BLOCKED
+                    val bannerColor = if (blocked) LocalAppColors.current.red else Color(0xFFFF9800)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(bannerColor.copy(alpha = 0.12f))
+                            .border(1.5.dp, bannerColor, RoundedCornerShape(14.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    ) {
+                        Text(
+                            if (blocked) "⛔ هذا العميل في القائمة السوداء — التعامل معه خطر. إضافة وتعديل العمليات ممنوعان حتى تغيير حالته."
+                            else "⚠️ هذا العميل موقوف — إضافة وتعديل العمليات ممنوعان حتى تغيير حالته من ملفه.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = bannerColor,
+                        )
+                    }
                 }
             }
             // ===== زر واتساب =====
@@ -1009,6 +1219,57 @@ fun AccountOpsScreen(
                                 "🧾 فواتير غير مسلمة ($pendingInvoicesCount)",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (active) InvoiceOrange else LocalAppColors.current.muted,
+                            )
+                        }
+                    }
+                }
+                // ===== إضافة 3.1 + 15.3 من تقرير الفحص: فلتر الاستحقاق + رقاقة الترتيب =====
+                item {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        // فلتر الديون المستحقة/المتأخرة
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(
+                                    if (dueOnly) LocalAppColors.current.red.copy(alpha = 0.14f)
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                                .border(
+                                    width = if (dueOnly) 1.5.dp else 1.dp,
+                                    color = if (dueOnly) LocalAppColors.current.red else LocalAppColors.current.border,
+                                    shape = RoundedCornerShape(20.dp),
+                                )
+                                .clickable { onSetDueOnly(!dueOnly) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                "⏰ مستحق ($dueCount)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (dueOnly) LocalAppColors.current.red else LocalAppColors.current.muted,
+                            )
+                        }
+                        // ترتيب القائمة: الأحدث / الأكبر مبلغاً
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(1.dp, LocalAppColors.current.border, RoundedCornerShape(20.dp))
+                                .clickable {
+                                    onSetSortMode(
+                                        if (sortMode == com.mahfazty.smart.ui.viewmodels.OpSortMode.LATEST)
+                                            com.mahfazty.smart.ui.viewmodels.OpSortMode.AMOUNT_DESC
+                                        else com.mahfazty.smart.ui.viewmodels.OpSortMode.LATEST,
+                                    )
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                if (sortMode == com.mahfazty.smart.ui.viewmodels.OpSortMode.LATEST) "↕️ الأحدث أولاً" else "↕️ الأكبر مبلغاً",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = LocalAppColors.current.muted,
                             )
                         }
                     }
@@ -1238,6 +1499,11 @@ fun AccountOpsScreen(
             message = msg,
             onConfirm = { deletingAccount = false; onDeleteAccount(acc.id); onBack() },
             onDismiss = { deletingAccount = false },
+            // إضافة 12.2 من تقرير الفحص: سحب الرصيد إلى البنك ثم الحذف
+            extraText = if (acc.realBalance > 0) "💵 سحب ثم حذف" else null,
+            onExtra = if (acc.realBalance > 0) {
+                { deletingAccount = false; onWithdrawAndDeleteAccount(acc.id); onBack() }
+            } else null,
         )
     }
     insufficientReal?.let { data ->

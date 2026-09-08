@@ -219,6 +219,23 @@ class MainViewModel(
     fun setBudget(catId: String, value: Double) = viewModelScope.launch { settingsRepo.setBudget(catId, value) }
     fun setOpeningBank(value: Double) = viewModelScope.launch { settingsRepo.setOpeningBank(value) }
     fun setOpeningCash(value: Double) = viewModelScope.launch { settingsRepo.setOpeningCash(value) }
+
+    /**
+     * إضافة 10.1/10.5 من تقرير الفحص: تذكير النسخ الاحتياطي كإشعار عند بدء التطبيق —
+     * لا نسخة قط، أو مضى أكثر من أسبوع، أو تراكمت 50 عملية جديدة منذ آخر نسخة.
+     */
+    fun checkBackupReminder(context: android.content.Context) = viewModelScope.launch {
+        val last = settingsRepo.lastBackupTs.first()
+        val now = System.currentTimeMillis()
+        val dayMs = 86_400_000L
+        val days = last?.let { ((now - it) / dayMs).toInt() }
+        val newOps = if (last != null) {
+            walletRepo.transactions.first().count { it.date > last }
+        } else 0
+        if (last == null || (days != null && days > 7) || newOps >= 50) {
+            com.mahfazty.smart.ui.util.BackupNotifier.post(context, days, newOps)
+        }
+    }
 }
 
 data class HomeUiState(
@@ -241,11 +258,23 @@ data class HomeUiState(
     val recent: List<Transaction> = emptyList(),
     val warnings: List<String> = emptyList(),
     val dateLabel: String = "",
+    /** إضافة 3.3 من تقرير الفحص: عدد الديون المستحقة/المتأخرة لدى كل العملاء */
+    val overdueCount: Int = 0,
+    /** إضافة 10.2/10.5 من تقرير الفحص: تحذير النسخ الاحتياطي (null = لا تحذير) */
+    val backupWarning: BackupWarning? = null,
+)
+
+/** إضافة 10.5: تذكير ذكي — بعد أسبوع أو 50 عملية جديدة (أيهما أولاً) */
+data class BackupWarning(
+    val never: Boolean,
+    val daysAgo: Int,
+    val newOps: Int,
 )
 
 class HomeViewModel(
     private val walletRepo: WalletRepository,
     private val settingsRepo: SettingsRepository,
+    clientsRepo: ClientsRepository,
 ) : ViewModel() {
 
     private data class Base(
@@ -258,10 +287,34 @@ class HomeViewModel(
         walletRepo.savingsTotal, walletRepo.transactions,
     ) { s, b, c, sv, txs -> Base(s, b, c, sv, txs) }
 
-    val state: StateFlow<HomeUiState> = combine(base, walletRepo.goalsWithSaved) { (s, bank, cash, savingsTotal, txs), goals ->
+    val state: StateFlow<HomeUiState> = combine(
+        base, walletRepo.goalsWithSaved, clientsRepo.clientsWithData, settingsRepo.lastBackupTs,
+    ) { (s, bank, cash, savingsTotal, txs), goals, clients, lastBackup ->
         val now = System.currentTimeMillis()
         val total = bank + cash
         val wealth = total + savingsTotal + goals.sumOf { it.saved }
+
+        // إضافة 3.3: عدّ الديون المستحقة اليوم أو المتأخرة (نفس منطق إشعار البدء)
+        val endOfToday = Calendar.getInstance().apply {
+            timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        var overdue = 0
+        clients.forEach { c -> c.accounts.forEach { a -> a.operations.forEach { op -> if (op.type == OpType.DEBT && op.dueDate != null && op.dueDate < endOfToday) overdue++ } } }
+
+        // إضافة 10.5: تذكير ذكي بالنسخ الاحتياطي
+        val dayMs = 86_400_000L
+        val backupWarning = when {
+            lastBackup == null -> BackupWarning(never = true, daysAgo = 0, newOps = 0)
+            else -> {
+                val days = ((now - lastBackup) / dayMs).toInt()
+                val newOps = txs.count { it.date > lastBackup }
+                if (days > 7 || newOps >= 50) BackupWarning(false, days, newOps) else null
+            }
+        }
+
         HomeUiState(
             name = s.name,
             bankName = s.bankName,
@@ -282,6 +335,8 @@ class HomeViewModel(
             recent = txs.sortedByDescending { it.date }.take(5),
             warnings = WalletEngine.budgetWarnings(txs, s.budgets, { categoryName(it, s) }, now),
             dateLabel = Dates.day(now),
+            overdueCount = overdue,
+            backupWarning = backupWarning,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
 
@@ -566,8 +621,9 @@ class GoalsViewModel(
     private val _insufficient = MutableStateFlow<InsufficientData?>(null)
     val insufficient: StateFlow<InsufficientData?> = _insufficient.asStateFlow()
 
-    private val _toast = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val toast: kotlinx.coroutines.flow.SharedFlow<String> = _toast.asSharedFlow()
+    // إضافة 14.1 من تقرير الفحص: توست مع إجراء «تراجع» لحذف الأهداف
+    private val _toast = MutableSharedFlow<ToastMsg>(extraBufferCapacity = 8)
+    val toast: kotlinx.coroutines.flow.SharedFlow<ToastMsg> = _toast.asSharedFlow()
 
     fun dismissInsufficient() { _insufficient.value = null }
 
@@ -577,7 +633,7 @@ class GoalsViewModel(
 
     fun addGoal(name: String, target: Double, opening: Double, icon: String) = viewModelScope.launch {
         walletRepo.addGoal(name, target, opening, icon)
-        _toast.emit("تم إضافة الهدف 🚀")
+        _toast.emit(ToastMsg("تم إضافة الهدف 🚀"))
     }
 
     fun contribute(goal: Goal, add: Boolean, amount: Double) = viewModelScope.launch {
@@ -589,28 +645,33 @@ class GoalsViewModel(
                     goals = currentGoals().filterNot { it.goal.id == goal.id },
                     savingsTotal = currentSavings(),
                 )
-            } else _toast.emit(err.message())
+            } else _toast.emit(ToastMsg(err.message()))
         } ?: run {
             _pending.value = null
-            _toast.emit(if (add) "تمت الإضافة للهدف ✅" else "تم السحب من الهدف ✅")
+            _toast.emit(ToastMsg(if (add) "تمت الإضافة للهدف ✅" else "تم السحب من الهدف ✅"))
         }
     }
 
+    /** إضافة 14.1: حذف الهدف مع لقطة — Snackbar «تراجع» يعيد الهدف بنفس معرفه (عملياته ما زالت مرتبطة به) */
     fun deleteGoal(goal: Goal) = viewModelScope.launch {
         walletRepo.deleteGoal(goal)
-        _toast.emit("تم حذف الهدف")
+        _toast.emit(
+            ToastMsg("تم حذف «${goal.name}»", "تراجع") {
+                viewModelScope.launch { walletRepo.restoreGoal(goal) }
+            },
+        )
     }
 
     fun quickWithdrawGoal(goalId: Long, goalName: String, amount: Double) = viewModelScope.launch {
         _insufficient.value = null
-        walletRepo.contributeGoal(goalId, goalName, false, amount)?.let { _toast.emit(it.message()) }
-            ?: _toast.emit("تم السحب من الهدف ✅")
+        walletRepo.contributeGoal(goalId, goalName, false, amount)?.let { _toast.emit(ToastMsg(it.message())) }
+            ?: _toast.emit(ToastMsg("تم السحب من الهدف ✅"))
     }
 
     fun quickWithdrawSavings(amount: Double) = viewModelScope.launch {
         _insufficient.value = null
-        walletRepo.withdrawSavings(amount)?.let { _toast.emit(it.message()) }
-            ?: _toast.emit("تم السحب من الادخار ✅")
+        walletRepo.withdrawSavings(amount)?.let { _toast.emit(ToastMsg(it.message())) }
+            ?: _toast.emit(ToastMsg("تم السحب من الادخار ✅"))
     }
 
     private suspend fun currentGoals(): List<GoalWithSaved> {

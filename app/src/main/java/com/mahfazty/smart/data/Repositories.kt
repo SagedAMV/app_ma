@@ -23,6 +23,7 @@ import com.mahfazty.smart.domain.model.Category
 import com.mahfazty.smart.domain.model.CategoryIds
 import com.mahfazty.smart.domain.model.CategoryKind
 import com.mahfazty.smart.domain.model.Client
+import com.mahfazty.smart.domain.model.ClientStatus
 import com.mahfazty.smart.domain.model.ClientAccount
 import com.mahfazty.smart.domain.model.ClientOperation
 import com.mahfazty.smart.domain.model.Goal
@@ -68,11 +69,24 @@ class SettingsRepository(private val db: AppDatabase) {
 
     suspend fun set(key: String, value: String) = db.settingsDao().upsert(SettingEntity(key, value))
 
+    /** سجل التدقيق (sec-6 + تقرير الفحص: الرصيد الافتتاحي يغيّر كامل الحسابات فيوثَّق) */
+    private suspend fun logAudit(action: String, details: String) {
+        db.auditLogDao().insert(AuditLogEntity(Ids.next(), System.currentTimeMillis(), action, details))
+    }
+
     suspend fun setBudget(catId: String, value: Double) = set("budget_$catId", value.toString())
 
-    suspend fun setOpeningBank(value: Double) = set("opening_bank", value.toString())
+    suspend fun setOpeningBank(value: Double) {
+        val old = openingBankSync()
+        set("opening_bank", value.toString())
+        logAudit("تعديل الرصيد الافتتاحي للبنك", "${Money.fmtLat(old)} ← ${Money.fmtLat(value)}")
+    }
 
-    suspend fun setOpeningCash(value: Double) = set("opening_cash", value.toString())
+    suspend fun setOpeningCash(value: Double) {
+        val old = openingCashSync()
+        set("opening_cash", value.toString())
+        logAudit("تعديل الرصيد الافتتاحي للكاش", "${Money.fmtLat(old)} ← ${Money.fmtLat(value)}")
+    }
 
     suspend fun setCustomCategories(kind: CategoryKind, categories: List<Category>) {
         val arr = JSONArray()
@@ -171,6 +185,17 @@ class WalletRepository(
 
     private suspend fun cashSync(): Double = WalletEngine.cashBalance(settingsRepo.openingCashSync(), db.transactionDao().getAll().map { it.toDomain() })
 
+    /** سجل التدقيق (sec-6 + تقرير الفحص: عمليات المحفظة تؤثر على الرصيد الكلي فتُوثَّق) */
+    private suspend fun logAudit(action: String, details: String) {
+        db.auditLogDao().insert(AuditLogEntity(Ids.next(), System.currentTimeMillis(), action, details))
+    }
+
+    /** ملخص عملية محفظة لقيد التدقيق */
+    private fun txSummary(t: Transaction): String =
+        "${if (t.type == TxType.INCOME) "دخل" else if (t.type == TxType.EXPENSE) "مصروف" else "تحويل"} ${Money.fmtLat(t.amount)}" +
+            " — ${com.mahfazty.smart.domain.categoryName(t.category)}" +
+            (t.note?.takeIf { it.isNotBlank() }?.let { " — $it" } ?: "")
+
     // ---------- العمليات المالية ----------
 
     suspend fun addTransaction(
@@ -222,6 +247,8 @@ class WalletRepository(
             WalletEngine.checkWithdraw(updated.amount, have)?.let { return it }
         }
         db.transactionDao().update(updated.toEntity())
+        // sec-6 + تقرير الفحص: توثيق تعديل عمليات المحفظة (قبل/بعد)
+        logAudit("تعديل عملية محفظة", "قبل: ${txSummary(old.toDomain())} | بعد: ${txSummary(updated)}")
         return null
     }
 
@@ -242,6 +269,8 @@ class WalletRepository(
         val goals = db.goalDao().getAll().map { it.toDomain() }
         if (goals.any { g -> WalletEngine.goalSaved(g.opening, g.id, without) < -0.000001 }) return WalletError.UnsafeDelete
         db.transactionDao().delete(tx.toEntity())
+        // sec-6 + تقرير الفحص: توثيق حذف عمليات المحفظة
+        logAudit("حذف عملية محفظة", txSummary(tx))
         return null
     }
 
@@ -254,6 +283,11 @@ class WalletRepository(
                 note = note?.ifBlank { null }, date = System.currentTimeMillis(),
                 wallet = if (direction == CategoryIds.BANK_TO_CASH) Wallet.BANK else Wallet.CASH,
             ).toEntity(),
+        )
+        // sec-6 + تقرير الفحص: التحويلات بين الصناديق تُوثَّق
+        logAudit(
+            "تحويل بين الصناديق",
+            "${if (direction == CategoryIds.BANK_TO_CASH) "سحب من البنك للكاش" else "إيداع من الكاش للبنك"}: ${Money.fmtLat(amount)}",
         )
         return null
     }
@@ -293,7 +327,21 @@ class WalletRepository(
         return null
     }
 
-    suspend fun deleteGoal(goal: Goal) = db.goalDao().delete(goal.toEntity())
+    /** sec-6 + تقرير الفحص: حذف هدف يحمل مدخرات — يوثَّق بالقيمة والمدخر وقت الحذف */
+    suspend fun deleteGoal(goal: Goal) {
+        val saved = WalletEngine.goalSaved(
+            goal.opening, goal.id, db.transactionDao().getAll().map { it.toDomain() },
+        )
+        db.goalDao().delete(goal.toEntity())
+        logAudit(
+            "حذف هدف",
+            "«${goal.name}» — الهدف ${Money.fmtLat(goal.target)} والمدخر وقت الحذف ${Money.fmtLat(saved)}" +
+                " (عمليات الهدف تبقى في السجل وترتبط بهذا المعرف)",
+        )
+    }
+
+    /** إضافة act-2 من تقرير الفحص: استعادة هدف محذوف (أساس زر «تراجع») */
+    suspend fun restoreGoal(goal: Goal) = db.goalDao().insert(goal.toEntity())
 
     // ---------- الادخار ----------
 
@@ -313,6 +361,8 @@ class WalletRepository(
                 date = System.currentTimeMillis(), wallet = Wallet.BANK,
             ).toEntity(),
         )
+        // sec-6 + تقرير الفحص: توثيق حركات الادخار
+        logAudit("إضافة للادخار", "+${Money.fmtLat(amount)} من البنك")
         return null
     }
 
@@ -330,6 +380,8 @@ class WalletRepository(
                 date = System.currentTimeMillis(), wallet = Wallet.BANK,
             ).toEntity(),
         )
+        // sec-6 + تقرير الفحص: سحب الادخار عملية حساسة — تُوثَّق
+        logAudit("سحب من الادخار", "-${Money.fmtLat(amount)} إلى البنك")
         return null
     }
 
@@ -352,6 +404,9 @@ class WalletRepository(
     // ---------- إدارة البيانات ----------
 
     suspend fun clearAllData() {
+        // sec-6 + تقرير الفحص: مسح كل البيانات عملية مدمرة — يوثَّق حجم ما حُذف
+        val txCount = db.transactionDao().getAll().size
+        val clientCount = db.clientDao().getAll().size
         db.withTransaction {
             db.transactionDao().deleteAll()
             db.goalDao().deleteAll()
@@ -363,6 +418,11 @@ class WalletRepository(
             db.settingsDao().deleteAll()
             db.savingsDao().upsert(SavingsEntity(id = 1, opening = 0.0, goal = 50_000.0))
         }
+        // قيد النجاة: يُكتب بعد المسح فيبقى وحده في السجل شاهداً على ما حدث
+        logAudit(
+            "مسح كل البيانات",
+            "حُذف كل شيء نهائياً: $txCount عملية محفظة و$clientCount عميل وكل الأهداف والادخار والإعدادات",
+        )
     }
 
     suspend fun exportBackupJson(): String {
@@ -732,8 +792,19 @@ class ClientsRepository(
         return id
     }
 
-    suspend fun updateClient(client: Client) =
+    suspend fun updateClient(client: Client) {
+        val old = db.clientDao().getAll().firstOrNull { it.id == client.id }
         db.clientDao().insert(client.toEntity())
+        // إضافة 5.5 من تقرير الفحص: تغييرات الحالة والبيانات تُوثَّق في سجل التدقيق
+        if (old != null && old.status != client.status) {
+            logAudit(
+                "تغيير حالة العميل",
+                "«${client.name}»: ${ClientStatus.label(old.status)} ← ${ClientStatus.label(client.status)}",
+            )
+        } else if (old != null && (old.name != client.name || old.phone != client.phone)) {
+            logAudit("تعديل عميل", "«${old.name}» ← «${client.name}»")
+        }
+    }
 
     suspend fun deleteClient(clientId: Long) = db.withTransaction {
         val client = db.clientDao().getAll().firstOrNull { it.id == clientId } ?: return@withTransaction

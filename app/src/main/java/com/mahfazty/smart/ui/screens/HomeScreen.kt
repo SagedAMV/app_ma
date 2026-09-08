@@ -1,6 +1,7 @@
 package com.mahfazty.smart.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -170,6 +171,32 @@ fun HomeScreen(
                         )
                     }
                 }
+                }
+            }
+
+            // ===== إضافة 3.3 من تقرير الفحص: شارة الديون المستحقة/المتأخرة =====
+            if (state.overdueCount > 0) {
+                item {
+                    HomeWarningBanner(
+                        text = "⏰ لديك ${state.overdueCount} دين مستحق أو متأخرة لدى عملائك — راجع تبويب العملاء",
+                        color = LocalAppColors.current.red,
+                    )
+                }
+            }
+            // ===== إضافة 10.2 من تقرير الفحص: شريط تذكير النسخ الاحتياطي في الرئيسية =====
+            if (state.backupWarning != null) {
+                item {
+                    var dismissed by remember { mutableStateOf(false) }
+                    if (!dismissed) {
+                        val w = state.backupWarning
+                        HomeWarningBanner(
+                            text = if (w.never) "💾 لم تأخذ نسخة احتياطية بعد — صدّرها من الإعدادات قبل فوات الأوان"
+                            else if (w.newOps >= 50) "💾 تراكمت ${w.newOps} عملية منذ آخر نسخة احتياطية — حان وقت التصدير"
+                            else "💾 آخر نسخة احتياطية قبل ${w.daysAgo} يوم — حان وقت التصدير",
+                            color = LocalAppColors.current.gold,
+                            onDismiss = { dismissed = true },
+                        )
+                    }
                 }
             }
 
@@ -610,6 +637,32 @@ private fun GoalMiniCard(goal: GoalWithSaved, currency: String, hidden: Boolean)
                     )
                 }
             }
+        }
+    }
+}
+
+/** لافتة تحذير علوية للرئيسية (إضافة 3.3 + 10.2 من تقرير الفحص) */
+@Composable
+private fun HomeWarningBanner(text: String, color: Color, onDismiss: (() -> Unit)? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.labelMedium, color = color, modifier = Modifier.weight(1f))
+        if (onDismiss != null) {
+            Text(
+                "✕",
+                style = MaterialTheme.typography.labelMedium,
+                color = color,
+                modifier = Modifier.clickable(onClick = onDismiss),
+            )
         }
     }
 }

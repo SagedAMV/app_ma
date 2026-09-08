@@ -170,7 +170,7 @@ fun ClientDialog(
                 )
             }
             Spacer(Modifier.height(12.dp))
-            AppTextField(name, { name = it }, "الاسم *", maxLength = 50)
+            AppTextField(name, { name = it.filter { ch -> ch !in "<>{}[]" } }, "الاسم *", maxLength = 50)
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // إصلاح sec-5: حد 20 حرفاً • إصلاح sec-4: لوحة رقمية + تحقق عند الحفظ
@@ -273,7 +273,7 @@ fun AccountDialog(
 
     AppSheet(title = title, onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
-            AppTextField(name, { name = it }, "اسم الحساب (ماطور، كهرباء...)")
+            AppTextField(name, { name = it.filter { ch -> ch !in "<>{}[]" } }, "اسم الحساب (ماطور، كهرباء...)")
             Spacer(Modifier.height(10.dp))
             Text("أيقونة", style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.height(6.dp))
