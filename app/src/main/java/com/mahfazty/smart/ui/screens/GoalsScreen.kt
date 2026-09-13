@@ -214,6 +214,8 @@ fun GoalsScreen(
             add = pendingContribute?.add ?: contributeAdd,
             currency = state.currency,
             initialAmount = pendingContribute?.amount,
+            // تحسين بيانات ناقصة: النافذة تعرض الآن كم يتوفر في الهدف وتمنع طلب سحب مستحيل
+            savedAvailable = state.goals.firstOrNull { it.goal.id == contributeGoal.id }?.saved,
             onDismiss = { contributing = null; onClearPending() },
             onSave = { add, amount ->
                 contributing = null
@@ -297,11 +299,30 @@ private fun GoalCard(
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text(
-                "${(goal.progress * 100).toInt()}% مكتمل",
-                style = MaterialTheme.typography.labelSmall,
-                color = LocalAppColors.current.muted,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "${(goal.progress * 100).toInt()}% مكتمل",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalAppColors.current.muted,
+                )
+                // تحسين بيانات ناقصة: كم بقي للوصول للهدف؟
+                if (goal.progress < 1f) {
+                    Text(
+                        "⏳ المتبقي: ${Money.fmt((goal.goal.target - goal.saved).coerceAtLeast(0.0))} $currency",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LocalAppColors.current.muted,
+                    )
+                } else {
+                    Text(
+                        "🎉 اكتمل الهدف",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LocalAppColors.current.green,
+                    )
+                }
+            }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(

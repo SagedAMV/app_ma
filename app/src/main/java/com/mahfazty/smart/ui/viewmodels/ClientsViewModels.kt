@@ -390,7 +390,7 @@ class AccountOpsViewModel(
                     dueDate = dueDate, currency = currency,
                 )
             }
-            handleError(err, amount)
+            handleError(err)
         } ?: run {
             _pendingOp.value = null
             _toast.emit(ToastMsg("تم حفظ العملية ✅"))
@@ -414,7 +414,7 @@ class AccountOpsViewModel(
                         dueDate = op.dueDate, currency = op.currency, editing = op,
                     )
                 }
-                handleError(err, op.amount)
+                handleError(err)
             } ?: run {
             _pendingOp.value = null
             _toast.emit(ToastMsg("تم التعديل ✅"))
@@ -500,7 +500,8 @@ class AccountOpsViewModel(
         }.onFailure { _toast.emit(ToastMsg("تعذر تصدير الكشف")) }
     }
 
-    private suspend fun handleError(err: WalletError, amount: Double) {
+    // ملاحظة فحص: حُذف الوسيط amount — كان يُمرَّر ولا يُستخدم داخل الدالة إطلاقاً.
+    private suspend fun handleError(err: WalletError) {
         when (err) {
             is WalletError.InsufficientReal -> {
                 val bank = walletRepo.bankBalance.first()

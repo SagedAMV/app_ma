@@ -215,10 +215,8 @@ class MainViewModel(
         }
     }
 
-    fun updateSetting(key: String, value: String) = viewModelScope.launch { settingsRepo.set(key, value) }
-    fun setBudget(catId: String, value: Double) = viewModelScope.launch { settingsRepo.setBudget(catId, value) }
-    fun setOpeningBank(value: Double) = viewModelScope.launch { settingsRepo.setOpeningBank(value) }
-    fun setOpeningCash(value: Double) = viewModelScope.launch { settingsRepo.setOpeningCash(value) }
+    // ملاحظة فحص: حُذفت من هنا updateSetting/setBudget/setOpeningBank/setOpeningCash —
+    // كانت دوالاً ميتة لا يستدعيها أي مكان (الإعدادات تمر عبر SettingsViewModel).
 
     /**
      * إضافة 10.1/10.5 من تقرير الفحص: تذكير النسخ الاحتياطي كإشعار عند بدء التطبيق —
@@ -248,7 +246,6 @@ data class HomeUiState(
     val bank: Double = 0.0,
     val cash: Double = 0.0,
     val total: Double = 0.0,
-    val displayedTotal: Double = 0.0,
     val wealth: Double = 0.0,
     val monthIncome: Double = 0.0,
     val monthExpense: Double = 0.0,
@@ -325,7 +322,6 @@ class HomeViewModel(
             bank = bank,
             cash = cash,
             total = total,
-            displayedTotal = if (s.hideSavings) total - savingsTotal else total,
             wealth = wealth,
             monthIncome = WalletEngine.monthIncome(txs, now),
             monthExpense = WalletEngine.monthExpense(txs, now),
@@ -402,9 +398,22 @@ class HomeViewModel(
             ?: _toast.emit("تم السحب من الادخار — يمكنك الآن تنفيذ العملية ✅")
     }
 
-    /** تحديث رصيد البنك الافتتاحي (من كارت الرصيد) */
+    /**
+     * تحديث رصيد البنك (من كارت الرصيد) — إصلاح fin-5:
+     * القيمة المُدخلة هي «الرصيد الفعلي المستهدف» الذي يراه المستخدم في حسابه البنكي.
+     * سابقاً كان يُحفظ المدخل كرصيد افتتاحي مباشرةً فيُحتسب أثر العمليات السابقة مرتين
+     * (رصيد مضخّم أو ناقص دون أن يشعر المستخدم). الآن يُعدَّل الافتتاحي بالفرق فقط:
+     * افتتاحي_جديد = افتتاحي_حالي + (المدخل − الرصيد_المحسوب)،
+     * فيصبح الرصيد المحسوب مطابقاً تماماً لما أدخله المستخدم.
+     */
     fun setOpeningBank(value: Double) = viewModelScope.launch {
-        settingsRepo.setOpeningBank(value)
+        if (value < 0 || value.isNaN()) {
+            _toast.emit("الرصيد لا يمكن أن يكون سالباً")
+            return@launch
+        }
+        val openingNow = settingsRepo.openingBankSync()
+        val bankNow = walletRepo.bankBalance.first()
+        settingsRepo.setOpeningBank(openingNow + (value - bankNow))
         _toast.emit("تم حفظ رصيد البنك ✅")
     }
 

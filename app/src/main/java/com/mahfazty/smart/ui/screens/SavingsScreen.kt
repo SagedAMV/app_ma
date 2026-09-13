@@ -297,6 +297,8 @@ fun SavingsScreen(
             title = "سحب من الادخار",
             currency = state.currency,
             note = "المبلغ سيعود إلى البنك",
+            // تحسين بيانات ناقصة: عرض المتاح ومنع طلب سحب أكبر من المدخر قبل وصوله للمحرك
+            available = state.total,
             onDismiss = { showWithdraw = false },
             onSave = { amount -> showWithdraw = false; onWithdrawSavings(amount) },
         )

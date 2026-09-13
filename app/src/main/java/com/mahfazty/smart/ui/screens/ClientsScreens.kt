@@ -250,7 +250,16 @@ fun ClientsScreen(
                 }
             }
             if (state.clients.isEmpty()) {
-                item { EmptyState("👥", "لا يوجد عملاء") }
+                // تحسين بيانات: تمييز «لا نتائج للبحث/الفلتر» عن «لا يوجد عملاء أصلاً»
+                val filtering = state.query.isNotBlank() ||
+                    state.statusFilter != com.mahfazty.smart.ui.viewmodels.ClientStatusFilter.ALL
+                item {
+                    EmptyState(
+                        if (filtering) "🔍" else "👥",
+                        if (filtering) "لا توجد نتائج مطابقة لبحثك أو الفلتر الحالي"
+                        else "لا يوجد عملاء — أضف عميلك الأول",
+                    )
+                }
             } else {
                 itemsIndexed(state.clients, key = { _, c -> c.client.id }) { index, c ->
                     ElasticEntrance(index + 3) {
@@ -1276,6 +1285,9 @@ fun AccountOpsScreen(
                 }
                 if (shownOps.isEmpty() && pendingInvoicesOnly) {
                     item { EmptyState("🧾", "لا توجد فواتير معلقة — كلها سُلّمت 🎉") }
+                } else if (shownOps.isEmpty()) {
+                    // تحسين بيانات: الفلاتر/البحث أخفى كل العمليات — رسالة توضح السبب بدل قائمة فارغة صامتة
+                    item { EmptyState("🔍", "لا توجد نتائج مطابقة للفلاتر الحالية — جرّب توسيع البحث أو المدى الزمني") }
                 } else {
                     items(shownOps, key = { it.id }) { op ->
                         ElasticEntrance(3) {
@@ -1513,6 +1525,10 @@ fun AccountOpsScreen(
             onClose = onDismissInsufficientReal,
             onFund = onQuickFundReal,
             onTransfer = onQuickTransferReal,
+            // إصلاح fin-6: صفّا «الادخار» و«الأهداف» كانا يعرضان أزرار شحن معطلة (دوال فارغة افتراضياً)
+            // — الآن موصولان فعلياً بمساري الشحن السريع، فيعمل كل زر ظاهر في النافذة.
+            onFundSavings = onQuickFundSavings,
+            onFundGoal = onQuickFundGoal,
         )
     }
 

@@ -60,7 +60,6 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -80,26 +79,6 @@ import com.mahfazty.smart.domain.categoryIcon
 import com.mahfazty.smart.domain.categoryName
 import java.io.File
 import kotlinx.coroutines.launch
-
-// ============ نصوص مالية ============
-
-/** نص مبلغ مع دعم إخفاء الأرصدة (وضع الخصوصية) */
-@Composable
-fun MoneyText(
-    amount: Double,
-    currency: String,
-    hidden: Boolean,
-    modifier: Modifier = Modifier,
-    style: TextStyle? = null,
-    color: Color = Color.Unspecified,
-) {
-    Text(
-        text = if (hidden) "•••••" else "${Money.fmt(amount)} $currency",
-        modifier = modifier,
-        style = style ?: MaterialTheme.typography.headlineMedium,
-        color = color,
-    )
-}
 
 // ============ حاويات ============
 
@@ -338,7 +317,16 @@ fun AmountField(
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = { text -> onValueChange(text.filter { it.isDigit() || it == '.' }) },
+        onValueChange = { text ->
+            // تصفية ذكية: أرقام + نقطة عشرية واحدة فقط.
+            // «1.2.3» كانت تمر سابقاً ثم يفشل تحويلها فتلغى العملية بصمت دون أي تنبيه.
+            val filtered = text.filter { it.isDigit() || it == '.' }
+            val dot = filtered.indexOf('.')
+            val clean = if (dot >= 0) {
+                filtered.substring(0, dot + 1) + filtered.substring(dot + 1).replace(".", "")
+            } else filtered
+            onValueChange(clean)
+        },
         modifier = modifier.fillMaxWidth(),
         label = { Text(label) },
         suffix = { Text(currency, style = MaterialTheme.typography.labelMedium) },

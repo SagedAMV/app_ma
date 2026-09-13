@@ -13,8 +13,8 @@ android {
         applicationId = "com.mahfazty.smart"
         minSdk = 24
         targetSdk = 35
-        versionCode = 20
-        versionName = "2.7.0"
+        versionCode = 21
+        versionName = "2.8.0"
         vectorDrawables { useSupportLibrary = true }
     }
 

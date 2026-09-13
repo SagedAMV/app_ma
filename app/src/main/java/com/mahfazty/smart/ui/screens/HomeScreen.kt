@@ -57,9 +57,7 @@ import com.mahfazty.smart.ui.components.ConfettiOverlay
 import com.mahfazty.smart.ui.components.animatedGradient
 import com.mahfazty.smart.ui.components.bounceClick
 import com.mahfazty.smart.ui.components.ElasticEntrance
-import com.mahfazty.smart.ui.components.SwingCardEntrance
 import com.mahfazty.smart.ui.components.EmptyState
-import com.mahfazty.smart.ui.components.MoneyText
 import com.mahfazty.smart.ui.components.SectionHeader
 import com.mahfazty.smart.ui.components.ShimmerBand
 import com.mahfazty.smart.ui.components.SoftDivider

@@ -129,6 +129,16 @@ class SettingsViewModel(
     fun addCustomCategory(kind: CategoryKind, name: String, icon: String) = viewModelScope.launch {
         val s = settings.value
         val current = if (kind == CategoryKind.EXPENSE) s.customExpense else s.customIncome
+        // معالجة خطأ المستخدم: منع فئة مكررة الاسم (بين المخصصة أو الافتراضية) بدل خلق بديلين محيرين
+        val defaults = if (kind == CategoryKind.EXPENSE) {
+            com.mahfazty.smart.domain.DefaultCategories.expense
+        } else {
+            com.mahfazty.smart.domain.DefaultCategories.income
+        }
+        if ((current + defaults).any { it.name.trim().equals(name.trim(), ignoreCase = true) }) {
+            _toast.emit("توجد فئة باسم «$name» مسبقاً — اختر اسماً مختلفاً")
+            return@launch
+        }
         val id = "custom_${Ids.next()}"
         val updated = current + Category(id, icon.ifBlank { "🏷️" }, name, kind)
         settingsRepo.setCustomCategories(kind, updated)
@@ -220,13 +230,18 @@ fun SettingsScreen(
     var confirmClear by remember { mutableStateOf(false) }
     var checks by remember { mutableStateOf<List<CheckResult>>(emptyList()) }
     LaunchedEffect(Unit) { vm.checks.collect { checks = it } }
+    // معالجة أخطاء المستخدم: قراءة الملف أولاً (فشل القراءة يُبلغ كتوست بدل الصمت التام)،
+    // ثم تأكيد صريح قبل الدمج لأن الاستيراد يضيف فوق البيانات الحالية ولا يستبدلها.
+    var pendingImport by remember { mutableStateOf<String?>(null) }
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
-            runCatching {
+            val text = runCatching {
                 context.contentResolver.openInputStream(it)?.use { input ->
-                    vm.importJson(input.bufferedReader(Charsets.UTF_8).readText())
+                    input.bufferedReader(Charsets.UTF_8).readText()
                 }
-            }
+            }.getOrNull()
+            if (text.isNullOrBlank()) vm.importJson("") // يمرر للمحرك فيُظهر رسالة خطأ واضحة
+            else pendingImport = text
         }
     }
 
@@ -512,7 +527,7 @@ fun SettingsScreen(
                         ) { Text("💰", fontSize = 30.sp) }
                     }
                     Spacer(Modifier.height(10.dp))
-                    Text("محفظتي الذكية v2.7.0", style = MaterialTheme.typography.titleMedium)
+                    Text("محفظتي الذكية v2.8.0", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "محاسبك الشخصي الذكي\nمصمم بعناية في اليمن 🇾🇪",
                         style = MaterialTheme.typography.bodySmall,
@@ -552,6 +567,17 @@ fun SettingsScreen(
             message = "ستُحذف كل العمليات والأهداف والعملاء والإعدادات نهائياً. لا يمكن التراجع.\n\n💡 نصيحة: صدّر نسخة احتياطية أولاً من «إدارة البيانات» — بعد المسح لا توجد طريقة للاستعادة.",
             onConfirm = { confirmClear = false; vm.clearAll() },
             onDismiss = { confirmClear = false },
+        )
+    }
+    // تأكيد الاستيراد: يوضح أن الدمج يضيف فوق البيانات الحالية (حماية من الاستيراد المكرر غير المقصود)
+    pendingImport?.let { text ->
+        ConfirmDialog(
+            title = "استيراد النسخة الاحتياطية؟",
+            message = "الاستيراد يدمج محتويات الملف مع بياناتك الحالية (لا يستبدلها): عمليات وأهداف وعملاء الملف ستُضاف فوق الموجود.\n\nهل تريد المتابعة؟",
+            confirmText = "استيراد",
+            danger = false,
+            onConfirm = { pendingImport = null; vm.importJson(text) },
+            onDismiss = { pendingImport = null },
         )
     }
 }
@@ -648,8 +674,13 @@ private fun BudgetInput(current: Double, onChange: (Double) -> Unit) {
         value = text,
         onValueChange = {
             val filtered = it.filter { c -> c.isDigit() || c == '.' }
-            text = filtered
-            onChange(Money.parse(filtered))
+            // نقطة عشرية واحدة فقط — «1.2.3» كانت تفشل التحويل فترجع صفراً وتصفّر الحد بصمت
+            val dot = filtered.indexOf('.')
+            val clean = if (dot >= 0) {
+                filtered.substring(0, dot + 1) + filtered.substring(dot + 1).replace(".", "")
+            } else filtered
+            text = clean
+            onChange(Money.parse(clean))
         },
         modifier = Modifier
             .width(130.dp)

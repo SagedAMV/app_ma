@@ -112,18 +112,20 @@ class SettingsRepository(private val db: AppDatabase) {
         map.forEach { (k, v) ->
             if (k.startsWith("budget_")) budgets[k.removePrefix("budget_")] = v.toDoubleOrNull() ?: 0.0
         }
+        // معالجة أخطاء المستخدم: قيمة فارغة (مسح الحقل بالكامل) تُعامل كغياب المفتاح
+        // فتعود للتسمية الافتراضية — لا تحية «أهلاً، 👋» ولا عملة فارغة بجانب كل مبلغ.
         return AppSettings(
-            name = map["name"] ?: "أحمد",
-            bankName = map["bank_name"] ?: "البنك",
-            cashName = map["cash_name"] ?: "الكاش",
-            currency = map["currency"] ?: "ر.ي",
+            name = map["name"]?.takeIf { it.isNotBlank() } ?: "أحمد",
+            bankName = map["bank_name"]?.takeIf { it.isNotBlank() } ?: "البنك",
+            cashName = map["cash_name"]?.takeIf { it.isNotBlank() } ?: "الكاش",
+            currency = map["currency"]?.takeIf { it.isNotBlank() } ?: "ر.ي",
             theme = when (map["theme"]) {
                 "dark" -> ThemeMode.DARK
                 "system" -> ThemeMode.SYSTEM
                 else -> ThemeMode.LIGHT
             },
-            primaryColor = map["primary_color"] ?: "#6C5CE7",
-            primary2 = map["primary_color2"] ?: "#A29BFE",
+            primaryColor = map["primary_color"]?.takeIf { it.isNotBlank() } ?: "#6C5CE7",
+            primary2 = map["primary_color2"]?.takeIf { it.isNotBlank() } ?: "#A29BFE",
             hideBalance = map["hide_balance"] == "true",
             hideSavings = map["hide_savings"] == "true",
             lockClients = map["lock_clients"] == "true",
@@ -235,17 +237,8 @@ class WalletRepository(
             val cash = WalletEngine.cashBalance(settingsRepo.openingCashSync(), withoutOld)
             WalletEngine.checkExpense(updated.amount, updated.wallet, bank, cash)?.let { return it }
         }
-        if (updated.category == CategoryIds.SAVINGS_WITHDRAW || updated.category == CategoryIds.GOAL_WITHDRAW) {
-            val have = if (updated.category == CategoryIds.SAVINGS_WITHDRAW) {
-                WalletEngine.savingsTotal(db.savingsDao().get()?.opening ?: 0.0, withoutOld)
-            } else {
-                WalletEngine.goalSaved(
-                    db.goalDao().getAll().firstOrNull { it.id == updated.goalId }?.opening ?: 0.0,
-                    updated.goalId ?: -1, withoutOld,
-                )
-            }
-            WalletEngine.checkWithdraw(updated.amount, have)?.let { return it }
-        }
+        // ملاحظة فحص: حُذف هنا فحص سحب الادخار/الهدف عند التعديل — كان كوداً ميتاً لا يمكن الوصول إليه:
+        // هاتان الفئتان محميتان (protectedCategories) ويُرفض التعديل قبل بلوغ هذا السطر دائماً.
         db.transactionDao().update(updated.toEntity())
         // sec-6 + تقرير الفحص: توثيق تعديل عمليات المحفظة (قبل/بعد)
         logAudit("تعديل عملية محفظة", "قبل: ${txSummary(old)} | بعد: ${txSummary(updated)}")  // old من نوع Transaction أصلاً — toDomain() ثانية كان خطأ

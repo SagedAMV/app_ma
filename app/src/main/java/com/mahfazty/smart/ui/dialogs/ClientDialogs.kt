@@ -428,6 +428,18 @@ fun OperationDialog(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
+                        // معالجة ذكية لأخطاء الإدخال: تنبيه حي عند اختلاف إجمالي المواد
+                        // عن المبلغ الإجمالي المدخل (خطأ شائع في أحد الرقمين) — تنبيه لا منع.
+                        val enteredAmt = Money.parse(amount)
+                        val matTotal = materials.sumOf { it.total }
+                        if (enteredAmt > 0 && kotlin.math.abs(matTotal - enteredAmt) > 0.5) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "⚠️ إجمالي المواد (${Money.fmt(matTotal)}) يختلف عن المبلغ المدخل (${Money.fmt(enteredAmt)}) — راجع أحدهما قبل الحفظ",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFFF9800),
+                            )
+                        }
                     }
                 }
             }
@@ -671,12 +683,14 @@ fun FundRealDialog(
 ) {
     var from by remember { mutableStateOf(Wallet.BANK) }
     var amount by remember { mutableStateOf("") }
+    // معالجة خطأ المستخدم: تحقق فوري واضح بدل التجاهل الصامت أو الرفض اللاحق
+    var saveHint by remember { mutableStateOf<String?>(null) }
     AppSheet(title = "➕ شحن الرصيد الحقيقي", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             SegmentedSwitch(
                 options = listOf(Wallet.BANK to "🏦 من $bankName", Wallet.CASH to "💵 من $cashName"),
                 selected = from,
-                onSelect = { from = it },
+                onSelect = { from = it; saveHint = null },
                 selectedColor = MaterialTheme.colorScheme.primary,
             )
             Text(
@@ -686,9 +700,25 @@ fun FundRealDialog(
                 modifier = Modifier.padding(vertical = 8.dp),
             )
             AmountField(amount, { amount = it }, "المبلغ للشحن", currency)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+            val srcAvailable = if (from == Wallet.BANK) bank else cash
+            val srcName = if (from == Wallet.BANK) bankName else cashName
+            saveHint?.let { hint ->
+                Text(hint, color = LocalAppColors.current.red, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(4.dp))
+            }
             Button(
-                onClick = { (Money.parse(amount)).let { if (it > 0) onSave(it, from) } },
+                onClick = {
+                    val amt = Money.parse(amount)
+                    when {
+                        amount.isBlank() || amt <= 0 -> saveHint = "⚠️ أدخل مبلغاً أكبر من صفر للشحن"
+                        amt > srcAvailable -> saveHint = "⚠️ المبلغ أكبر من رصيد $srcName (المتاح: ${Money.fmt(srcAvailable)} $currency)"
+                        else -> {
+                            saveHint = null
+                            onSave(amt, from)
+                        }
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .bounceClick(),
@@ -712,6 +742,8 @@ fun WithdrawRealDialog(
 ) {
     var to by remember { mutableStateOf(Wallet.BANK) }
     var amount by remember { mutableStateOf("") }
+    // معالجة خطأ المستخدم: تحقق فوري واضح بدل التجاهل الصامت أو الرفض اللاحق
+    var saveHint by remember { mutableStateOf<String?>(null) }
     AppSheet(title = "➖ سحب الرصيد الحقيقي", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             SegmentedSwitch(
@@ -721,15 +753,29 @@ fun WithdrawRealDialog(
                 selectedColor = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                "الرصيد الحقيقي: ${Money.fmt(realBalance)}",
+                "الرصيد الحقيقي المتاح: ${Money.fmt(realBalance)} $currency",
                 style = MaterialTheme.typography.labelSmall,
                 color = LocalAppColors.current.muted,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
             AmountField(amount, { amount = it }, "المبلغ للسحب", currency)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+            saveHint?.let { hint ->
+                Text(hint, color = LocalAppColors.current.red, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(4.dp))
+            }
             Button(
-                onClick = { (Money.parse(amount)).let { if (it > 0) onSave(it, to) } },
+                onClick = {
+                    val amt = Money.parse(amount)
+                    when {
+                        amount.isBlank() || amt <= 0 -> saveHint = "⚠️ أدخل مبلغاً أكبر من صفر للسحب"
+                        amt > realBalance -> saveHint = "⚠️ المبلغ أكبر من الرصيد الحقيقي (المتاح: ${Money.fmt(realBalance)} $currency)"
+                        else -> {
+                            saveHint = null
+                            onSave(amt, to)
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface),
                 shape = RoundedCornerShape(14.dp),
@@ -758,14 +804,16 @@ fun TransferRealDialog(
     var selectedSavings by remember { mutableStateOf(false) }
     var selectedGoal by remember { mutableStateOf<Triple<Long, String, Double>?>(null) }
     var amount by remember { mutableStateOf("") }
+    // معالجة خطأ المستخدم: رسالة واضحة عند غياب المصدر أو المبلغ (كان الزر يتجاهل بصمت)
+    var saveHint by remember { mutableStateOf<String?>(null) }
     fun pickAcc(pair: Pair<Client, ClientAccount>) {
-        selectedAcc = pair; selectedSavings = false; selectedGoal = null
+        selectedAcc = pair; selectedSavings = false; selectedGoal = null; saveHint = null
     }
     fun pickSavings() {
-        selectedAcc = null; selectedSavings = true; selectedGoal = null
+        selectedAcc = null; selectedSavings = true; selectedGoal = null; saveHint = null
     }
     fun pickGoal(g: Triple<Long, String, Double>) {
-        selectedAcc = null; selectedSavings = false; selectedGoal = g
+        selectedAcc = null; selectedSavings = false; selectedGoal = g; saveHint = null
     }
     AppSheet(title = "🔄 تحويل رصيد حقيقي", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
@@ -817,20 +865,31 @@ fun TransferRealDialog(
             }
             Spacer(Modifier.height(10.dp))
             AmountField(amount, { amount = it }, "المبلغ للتحويل", currency)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+            saveHint?.let { hint ->
+                Text(hint, color = LocalAppColors.current.red, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(4.dp))
+            }
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt <= 0) return@Button
+                    val hasSource = selectedSavings || selectedGoal != null || selectedAcc != null
                     when {
-                        selectedSavings -> onFromSavings(minOf(amt, savings))
-                        selectedGoal != null -> {
-                            val g = selectedGoal!!
-                            onFromGoal(g.first, g.second, minOf(amt, g.third))
-                        }
-                        selectedAcc != null -> {
-                            val (c, a) = selectedAcc!!
-                            onSave(c.id, a.id, minOf(amt, a.realBalance))
+                        !hasSource -> saveHint = "⚠️ اختر مصدر التحويل أولاً (حساب / ادخار / هدف)"
+                        amount.isBlank() || amt <= 0 -> saveHint = "⚠️ أدخل مبلغاً أكبر من صفر للتحويل"
+                        else -> {
+                            saveHint = null
+                            when {
+                                selectedSavings -> onFromSavings(minOf(amt, savings))
+                                selectedGoal != null -> {
+                                    val g = selectedGoal!!
+                                    onFromGoal(g.first, g.second, minOf(amt, g.third))
+                                }
+                                selectedAcc != null -> {
+                                    val (c, a) = selectedAcc!!
+                                    onSave(c.id, a.id, minOf(amt, a.realBalance))
+                                }
+                            }
                         }
                     }
                 },

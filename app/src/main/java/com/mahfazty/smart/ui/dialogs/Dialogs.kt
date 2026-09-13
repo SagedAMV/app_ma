@@ -82,6 +82,8 @@ fun AddTransactionDialog(
     val categories = allCategories(settings)
     val cats = if (type == TxType.EXPENSE) categories[CategoryKind.EXPENSE] else categories[CategoryKind.INCOME]
     var categoryId by remember { mutableStateOf(initialCategory ?: cats?.firstOrNull()?.id ?: "other") }
+    // معالجة خطأ المستخدم: رسالة واضحة بدل التجاهل الصامت عند مبلغ غير صالح
+    var saveHint by remember { mutableStateOf<String?>(null) }
 
     AppSheet(title = "إضافة عملية جديدة", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
@@ -151,10 +153,23 @@ fun AddTransactionDialog(
             SheetFieldEntrance(4) { AppTextField(note, { note = it }, "ملاحظة (اختياري)", maxLength = 200) }
             Spacer(Modifier.height(16.dp))
             SheetFieldEntrance(5) {
+                saveHint?.let { hint ->
+                    Text(
+                        "⚠️ $hint",
+                        color = LocalAppColors.current.red,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
                 Button(
                     onClick = {
                         val amt = Money.parse(amount)
-                        if (amt > 0) onSave(type, amt, categoryId, note.ifBlank { null }, wallet)
+                        if (amount.isBlank() || amt <= 0) {
+                            saveHint = "أدخل مبلغاً أكبر من صفر لحفظ العملية"
+                        } else {
+                            saveHint = null
+                            onSave(type, amt, categoryId, note.ifBlank { null }, wallet)
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -186,6 +201,8 @@ fun EditTransactionDialog(
     val categories = allCategories(settings)
     val cats = if (type == TxType.INCOME) categories[CategoryKind.INCOME] else categories[CategoryKind.EXPENSE]
     var categoryId by remember { mutableStateOf(tx.category) }
+    // معالجة خطأ المستخدم: رسالة واضحة بدل التجاهل الصامت عند مبلغ غير صالح
+    var saveHint by remember { mutableStateOf<String?>(null) }
 
     AppSheet(title = "✏️ تعديل العملية", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
@@ -238,10 +255,23 @@ fun EditTransactionDialog(
             Spacer(Modifier.height(12.dp))
             AppTextField(note, { note = it }, "ملاحظة", maxLength = 200)
             Spacer(Modifier.height(16.dp))
+            saveHint?.let { hint ->
+                Text(
+                    "⚠️ $hint",
+                    color = LocalAppColors.current.red,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) onSave(tx.copy(type = type, amount = amt, category = categoryId, note = note.ifBlank { null }, wallet = wallet))
+                    if (amount.isBlank() || amt <= 0) {
+                        saveHint = "أدخل مبلغاً أكبر من صفر لحفظ التعديل"
+                    } else {
+                        saveHint = null
+                        onSave(tx.copy(type = type, amount = amt, category = categoryId, note = note.ifBlank { null }, wallet = wallet))
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -355,6 +385,8 @@ fun TransferDialog(
     var direction by remember { mutableStateOf(initialDirection ?: "bank_to_cash") }
     var amount by remember { mutableStateOf(if (initialAmount != null && initialAmount > 0) Money.input(initialAmount) else "") }
     var note by remember { mutableStateOf(initialNote.orEmpty()) }
+    // معالجة خطأ المستخدم: تحذير فوري بدل الرفض الصامت أو فشل لاحق
+    var saveHint by remember { mutableStateOf<String?>(null) }
 
     AppSheet(title = "🔄 تحويل بين البنك والكاش", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
@@ -410,10 +442,37 @@ fun TransferDialog(
             Spacer(Modifier.height(16.dp))
             // إضافة 13.2 من تقرير الفحص: تأكيد صريح قبل تنفيذ التحويل بين الصناديق
             var confirmStep by remember { mutableStateOf(false) }
+            // تحذير فوري: المبلغ المطلوب أكبر من رصيد الصندوق المصدر
+            val srcAvailable = if (direction == "bank_to_cash") bank else cash
+            val srcName = if (direction == "bank_to_cash") settings.bankName else settings.cashName
+            val parsedAmt = Money.parse(amount)
+            if (amount.isNotBlank() && parsedAmt > srcAvailable) {
+                Text(
+                    "⚠️ المبلغ أكبر من رصيد $srcName (المتاح: ${Money.fmt(srcAvailable)} ${settings.currency})",
+                    color = LocalAppColors.current.red,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
+            saveHint?.let { hint ->
+                Text(
+                    "⚠️ $hint",
+                    color = LocalAppColors.current.red,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) confirmStep = true
+                    when {
+                        amount.isBlank() || amt <= 0 -> saveHint = "أدخل مبلغاً أكبر من صفر للتحويل"
+                        amt > srcAvailable -> saveHint = "رصيد $srcName لا يكفي — المتاح ${Money.fmt(srcAvailable)} ${settings.currency}"
+                        else -> {
+                            saveHint = null
+                            confirmStep = true
+                        }
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -462,9 +521,10 @@ fun EditBankDialog(
     var amount by remember { mutableStateOf(if (current > 0) Money.input(current) else "") }
     AppSheet(title = "🏦 رصيد البنك", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
-            AmountField(amount, { amount = it }, "كم رصيدك الحالي في البنك؟", currency)
+            AmountField(amount, { amount = it }, "كم رصيدك الفعلي الآن في البنك؟", currency)
             Text(
-                "هذا الرصيد هو نقطة البداية، وكل العمليات ستضاف أو تخصم منه.",
+                "أدخل ما يظهر في حسابك البنكي فعلاً — يطابق التطبيق الحسابات تلقائياً " +
+                    "دون احتساب عملياتك السابقة مرتين.",
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalAppColors.current.muted,
                 modifier = Modifier.padding(vertical = 10.dp),
@@ -495,6 +555,8 @@ fun GoalDialog(
     var target by remember { mutableStateOf("") }
     var opening by remember { mutableStateOf("") }
     var icon by remember { mutableStateOf("💻") }
+    // معالجة خطأ المستخدم: رسائل تحقق واضحة بدل الحفظ الصامت الفاشل
+    var saveHint by remember { mutableStateOf<String?>(null) }
     val icons = listOf("💻" to "تقنية", "🚗" to "سيارة", "🏠" to "منزل", "✈️" to "سفر", "📱" to "جوال", "🎓" to "دراسة", "💍" to "زواج", "🎮" to "ترفيه")
 
     AppSheet(title = "🎯 هدف جديد", onDismiss = onDismiss) {
@@ -535,10 +597,25 @@ fun GoalDialog(
             }
             Spacer(Modifier.height(16.dp))
             SheetFieldEntrance(4) {
+                saveHint?.let { hint ->
+                    Text(
+                        "⚠️ $hint",
+                        color = LocalAppColors.current.red,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
                 Button(
                     onClick = {
                         val t = Money.parse(target)
-                        if (name.isNotBlank() && t > 0) onSave(name.trim(), t, Money.parse(opening), icon)
+                        when {
+                            name.isBlank() -> saveHint = "اكتب اسم الهدف أولاً (مثلاً: لابتوب جديد)"
+                            target.isBlank() || t <= 0 -> saveHint = "أدخل المبلغ المطلوب — أكبر من صفر"
+                            else -> {
+                                saveHint = null
+                                onSave(name.trim(), t, Money.parse(opening), icon)
+                            }
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -561,6 +638,8 @@ fun ContributeDialog(
     add: Boolean,
     currency: String,
     initialAmount: Double? = null,
+    /** المدخر المتاح في الهدف — يُعرض للمستخدم ويمنع طلب سحب مستحيل (تحسين بيانات ناقصة) */
+    savedAvailable: Double? = null,
     onDismiss: () -> Unit,
     onSave: (Boolean, Double) -> Unit,
 ) {
@@ -568,6 +647,8 @@ fun ContributeDialog(
     var amount by remember { mutableStateOf(if (initialAmount != null && initialAmount > 0) Money.input(initialAmount) else "") }
     // إضافة 13.1 من تقرير الفحص: تأكيد قبل تنفيذ إضافة/سحب الأهداف
     var confirmStep by remember { mutableStateOf(false) }
+    // معالجة خطأ المستخدم: رسالة واضحة بدل التجاهل الصامت
+    var saveHint by remember { mutableStateOf<String?>(null) }
 
     AppSheet(title = if (mode) "إضافة للهدف" else "سحب من الهدف", onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
@@ -576,7 +657,7 @@ fun ContributeDialog(
             SegmentedSwitch(
                 options = listOf(true to "➕ إضافة", false to "💸 سحب"),
                 selected = mode,
-                onSelect = { mode = it },
+                onSelect = { mode = it; saveHint = null },
                 selectedColor = if (mode) LocalAppColors.current.green else MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(12.dp))
@@ -587,10 +668,35 @@ fun ContributeDialog(
                 color = LocalAppColors.current.muted,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
+            // بيانات ناقصة سابقاً: كم يتوفر في هذا الهدف أصلاً؟
+            if (!mode && savedAvailable != null) {
+                Text(
+                    "المتاح في الهدف: ${Money.fmt(savedAvailable)} $currency",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            saveHint?.let { hint ->
+                Text(
+                    "⚠️ $hint",
+                    color = LocalAppColors.current.red,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) confirmStep = true
+                    when {
+                        amount.isBlank() || amt <= 0 -> saveHint = "أدخل مبلغاً أكبر من صفر"
+                        !mode && savedAvailable != null && amt > savedAvailable ->
+                            saveHint = "المبلغ أكبر من مدخر الهدف (المتاح: ${Money.fmt(savedAvailable)} $currency)"
+                        else -> {
+                            saveHint = null
+                            confirmStep = true
+                        }
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -627,11 +733,15 @@ fun SavingsAmountDialog(
     currency: String,
     note: String,
     initialAmount: Double? = null,
+    /** المتاح (للسحب: إجمالي المدخر) — يُعرض ويمنع طلباً مستحيلاً قبل وصوله للمحرك */
+    available: Double? = null,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit,
 ) {
     var amount by remember { mutableStateOf(if (initialAmount != null && initialAmount > 0) Money.input(initialAmount) else "") }
     var confirmStep by remember { mutableStateOf(false) }
+    // معالجة خطأ المستخدم: رسالة واضحة بدل التجاهل الصامت
+    var saveHint by remember { mutableStateOf<String?>(null) }
     AppSheet(title = title, onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             AmountField(amount, { amount = it }, "المبلغ", currency)
@@ -641,10 +751,34 @@ fun SavingsAmountDialog(
                 color = LocalAppColors.current.muted,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
+            if (available != null) {
+                Text(
+                    "المتاح: ${Money.fmt(available)} $currency",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            saveHint?.let { hint ->
+                Text(
+                    "⚠️ $hint",
+                    color = LocalAppColors.current.red,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
             Button(
                 onClick = {
                     val amt = Money.parse(amount)
-                    if (amt > 0) confirmStep = true
+                    when {
+                        amount.isBlank() || amt <= 0 -> saveHint = "أدخل مبلغاً أكبر من صفر"
+                        available != null && amt > available ->
+                            saveHint = "المبلغ أكبر من المتاح (${Money.fmt(available)} $currency)"
+                        else -> {
+                            saveHint = null
+                            confirmStep = true
+                        }
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()

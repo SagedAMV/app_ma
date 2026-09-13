@@ -114,50 +114,8 @@ fun Modifier.bounceClick(): Modifier = composed {
         }
 }
 
-/**
- * 🕰️ تأرجح الساعة: البطاقة تدخل بدوران كعقرب ساعة يتأرجح، ثم ترتد في الاتجاه
- * المعاكس قليلاً بتأثير الجاذبية، ثم تستقر في مكانها بنعومة. مع تلاشٍ داخلي
- * وتقليص طفيف (0.95 → 1.0) أثناء الدوران.
- *
- * معايرة 2026: تأرجح أوضح (-12° → 8° → -3° → 0°) وأسرع (350ms + 250ms).
- */
-@Composable
-fun SwingCardEntrance(
-    index: Int,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val reduce = rememberReduceMotion()
-    val rotation = remember { Animatable(0f) }
-    val alpha = remember { Animatable(0f) }
-    val scale = remember { Animatable(1f) }
-    LaunchedEffect(Unit) {
-        if (reduce) {
-            alpha.snapTo(1f)
-            return@LaunchedEffect
-        }
-        delay((index * Motion.STAGGER_STEP_MS).toLong())
-        launch { alpha.animateTo(1f, tween(380, easing = LinearOutSlowInEasing)) }
-        // 1) يدخل مائلاً كعقرب ساعة ثم يتأرجح نحو الداخل
-        rotation.snapTo(-12f)
-        rotation.animateTo(8f, tween(350, easing = LinearOutSlowInEasing))
-        // 2) ارتداد معاكس خفيف — تأثير الجاذبية
-        rotation.animateTo(-3f, tween(250, easing = LinearOutSlowInEasing))
-        // 3) الاستقرار المتدرج في الوضع الطبيعي
-        rotation.animateTo(0f, Motion.springGentle)
-        // 4) تقليص خفيف أثناء الدوران (عمق بصري)
-        scale.snapTo(0.95f)
-        launch { scale.animateTo(1f, Motion.springGentle) }
-    }
-    Box(
-        modifier.graphicsLayer {
-            rotationZ = rotation.value
-            this.alpha = alpha.value
-            scaleX = scale.value
-            scaleY = scale.value
-        },
-    ) { content() }
-}
+// ملاحظة فحص: حُذفت SwingCardEntrance — كانت دالة ميتة (معرّفة ومستوردة في الرئيسية
+// لكنها غير مستدعاة إطلاقاً). عند الحاجة لمثلها مستقبلاً تُكتب وتُستخدم فعلياً.
 
 /**
  * نظام 11 — مطاط يتجاوز ثم يستقر.

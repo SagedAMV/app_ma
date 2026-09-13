@@ -23,7 +23,6 @@ object Dates {
     private val dayDateFmt = SimpleDateFormat("EEEE d MMMM", Locale("ar"))
     private val shortDateFmt = SimpleDateFormat("d MMMM", Locale("ar"))
     private val monthFmt = SimpleDateFormat("MMMM yyyy", Locale("ar"))
-    private val timeFmt = SimpleDateFormat("h:mm a", Locale("ar"))
     private val dateTimeFmt = SimpleDateFormat("d MMMM yyyy • h:mm a", Locale("ar"))
     private val fileFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
@@ -36,8 +35,7 @@ object Dates {
     /** "أغسطس 2026" */
     fun month(ts: Long): String = monthFmt.format(Date(ts))
 
-    /** "10:30 م" */
-    fun time(ts: Long): String = timeFmt.format(Date(ts))
+    // ملاحظة فحص: حُذفت الدالة time() — كانت ميتة لا يستدعيها أي مكان في التطبيق.
 
     /** "12 أغسطس 2026 • 10:30 م" */
     fun dateTime(ts: Long): String = dateTimeFmt.format(Date(ts))
