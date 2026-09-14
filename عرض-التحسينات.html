@@ -304,21 +304,21 @@
           <div class="cc-sub">يأتي من الشحن والسحب والتحويلات فقط</div>
         </div>
 
-        <div class="ops-balance debt" id="obCard">
+        <div class="ops-balance" id="obCard">
           <div class="gleam"></div>
-          <div class="ob-top"><span class="lbl">💠 الرصيد الحالي (عليه / له)</span><span class="ob-chip" id="obChip">🔴 عليه (دين)</span></div>
-          <div class="ob-amount"><span id="obAmount">٢٬٠٠٠</span> <small>ر.ي</small></div>
+          <div class="ob-top"><span class="lbl">💠 الرصيد الحالي (عليه / له)</span><span class="ob-chip" id="obChip">🟢 له</span></div>
+          <div class="ob-amount"><span id="obAmount">١٬٠٠٠</span> <small>ر.ي</small></div>
           <div class="ob-sub">الرصيد العادي من عمليات الدين/السداد — منفصل عن الرصيد الحقيقي 🔐</div>
         </div>
 
         <div id="opsList">
-          <div class="op-row"><span class="op-badge pay">🟢 له (سداد)</span><div class="op-main"><div class="op-note">دفعة نقدية</div><div class="op-date">١٨ يناير</div></div><div class="op-side"><div class="op-amt pay">١٬٠٠٠</div><div class="op-run pay" data-run="-2000">بعدها: له ٢٬٠٠٠</div></div></div>
-          <div class="op-row"><span class="op-badge debt">🔴 عليه (دين)</span><div class="op-main"><div class="op-note">فاتورة كهرباء</div><div class="op-date">١٥ يناير</div></div><div class="op-side"><div class="op-amt debt">٣٬٠٠٠</div><div class="op-run debt" data-run="-1000">بعدها: له ١٬٠٠٠</div></div></div>
-          <div class="op-row"><span class="op-badge debt">🔴 عليه (دين)</span><div class="op-main"><div class="op-note">بضاعة أولى</div><div class="op-date">١٠ يناير</div></div><div class="op-side"><div class="op-amt debt">٢٬٠٠٠</div><div class="op-run pay" data-run="2000">بعدها: عليه ٢٬٠٠٠</div></div></div>
+          <div class="op-row"><span class="op-badge pay">🟢 له (سداد)</span><div class="op-main"><div class="op-note">دفعة نقدية</div><div class="op-date">١٨ يناير</div></div><div class="op-side"><div class="op-amt pay">٦٬٠٠٠</div><div class="op-run pay" data-run="-1000">بعدها: له ١٬٠٠٠</div></div></div>
+          <div class="op-row"><span class="op-badge debt">🔴 عليه (دين)</span><div class="op-main"><div class="op-note">فاتورة كهرباء</div><div class="op-date">١٥ يناير</div></div><div class="op-side"><div class="op-amt debt">٣٬٠٠٠</div><div class="op-run debt" data-run="5000">بعدها: عليه ٥٬٠٠٠</div></div></div>
+          <div class="op-row"><span class="op-badge debt">🔴 عليه (دين)</span><div class="op-main"><div class="op-note">بضاعة أولى</div><div class="op-date">١٠ يناير</div></div><div class="op-side"><div class="op-amt debt">٢٬٠٠٠</div><div class="op-run debt" data-run="2000">بعدها: عليه ٢٬٠٠٠</div></div></div>
         </div>
 
-        <button class="add-op" id="addOp">＋ أضف عملية «عليه ٥٠٠» وشاهد الرصيد يتنقّل</button>
-        <p class="add-hint">كل صف يكشف الرصيد <b>بعده</b> — اقرأ الكشف من الأسفل للأعلى وترى الرصيد يتحرك</p>
+        <button class="add-op" id="addOp">＋ أضف عملية جديدة «عليه ٥٠٠» — تظهر في الأعلى</button>
+        <p class="add-hint">العملية الجديدة تظهر <b>فوق</b> وتنزل القديمة تحتها بانسيابية · وكل صف يكشف الرصيد <b>بعده</b></p>
       </div>
     </section>
 
@@ -328,6 +328,7 @@
       <div class="sum-item"><span class="ic">✨</span><div><b>CardGleamOverlay</b> — مكوّن بريق جديد (توهج يتنفس + موجتا ضوء تنسابان ثم تسكنان) حلّ محل اللمعان الخطي في بطاقة الرصيد الرئيسية.</div></div>
       <div class="sum-item"><span class="ic">💠</span><div><b>ClientOpsBalanceCard</b> — بطاقة «الرصيد الحالي (عليه/له)» في شاشة الحساب، تعدّ تصاعدياً وتتلوّن حسب الحالة.</div></div>
       <div class="sum-item"><span class="ic">🧮</span><div><b>runningOpsBalance</b> — دالة في WalletEngine تحسب الرصيد العادي الجاري بعد كل عملية، ويظهر تحت كل صف «بعدها: عليه/له …».</div></div>
+      <div class="sum-item"><span class="ic">⬆️</span><div><b>الجديدة فوق</b> — أصبح ترتيب «الأحدث أولاً» فعلياً: العملية الجديدة تظهر في الأعلى وتنزل القديمة تحتها (كانت تُضاف في الأسفل).</div></div>
       <div class="sum-item"><span class="ic">🧹</span><div><b>تنظيف</b> — حذف MorphTransition (دالة ميتة لم تُستدعَ قط) على نهج SwingCardEntrance.</div></div>
     </section>
 
@@ -369,9 +370,9 @@
     requestAnimationFrame(frame);
   }
   function runCountUps(pane){
-    // بطاقة الرصيد العادي
+    // بطاقة الرصيد العادي (له ١٬٠٠٠ بعد أن غطت الدفعة الدينين)
     const ob = pane.querySelector('#obAmount');
-    if(ob){ countUp(ob, 2000, 700); }
+    if(ob){ countUp(ob, 1000, 700); }
     // أرصدة «بعدها» — تُقرأ قيمتها المخزنة
     pane.querySelectorAll('.op-run').forEach((r,i)=>{
       const v = Math.abs(parseInt(r.dataset.run||'0',10));
@@ -386,7 +387,7 @@
   // ===== محاكاة إضافة عملية «عليه ٥٠٠» =====
   const addBtn = document.getElementById('addOp');
   let extraOps = [];
-  const baseOps = [ {t:'pay', amt:1000, note:'دفعة نقدية'}, {t:'debt', amt:3000, note:'فاتورة كهرباء'}, {t:'debt', amt:2000, note:'بضاعة أولى'} ];
+  const baseOps = [ {t:'pay', amt:6000, note:'دفعة نقدية'}, {t:'debt', amt:3000, note:'فاتورة كهرباء'}, {t:'debt', amt:2000, note:'بضاعة أولى'} ];
   addBtn.addEventListener('click',()=>{
     extraOps.push({t:'debt', amt:500, note:'عملية جديدة '+toAr(extraOps.length+1)});
     renderOps();

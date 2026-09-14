@@ -989,11 +989,16 @@ fun AccountOpsScreen(
     val dueFiltered = if (dueOnly) {
         queryFiltered.filter { it.type == OpType.DEBT && it.dueDate != null && it.dueDate < endOfToday }.sortedBy { it.dueDate }
     } else queryFiltered
-    // ترتيب عام (15.3): الافتراضي الأحدث أولاً (من الاستعلام)، أو الأكبر مبلغاً
+    // ترتيب عام (15.3): الافتراضي «الأحدث أولاً» — العملية الجديدة تظهر في الأعلى
+    // والقديمة تنزل تحتها بعد كل عملية تُضاف (إصلاح: كان يعتمد على ترتيب الاستعلام
+    // وهو ترتيب الإدخال = الأقدم أولاً، فتظهر العمليات الجديدة في الأسفل).
+    // عند تساوي التاريخ (عمليتان في اللحظة نفسها) نحتكم إلى id: الأحدث (الأكبر) أولاً.
     val sortedOps = when {
         dueOnly -> dueFiltered
         sortMode == com.mahfazty.smart.ui.viewmodels.OpSortMode.AMOUNT_DESC -> dueFiltered.sortedByDescending { it.amount }
-        else -> dueFiltered
+        else -> dueFiltered.sortedWith(
+            compareByDescending<ClientOperation> { it.date }.thenByDescending { it.id },
+        )
     }
     // فواتير معلقة فقط (فلتر أصلي) فوق نتائج البحث
     val shownOps = if (pendingInvoicesOnly) sortedOps.filter { it.isInvoice && !it.invoiceDelivered } else sortedOps
