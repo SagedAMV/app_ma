@@ -74,6 +74,7 @@ import com.mahfazty.smart.domain.model.ClientAccount
 import com.mahfazty.smart.domain.model.ClientOperation
 import com.mahfazty.smart.domain.model.OpType
 import com.mahfazty.smart.domain.model.Wallet
+import com.mahfazty.smart.ui.components.AnimatedNumber
 import com.mahfazty.smart.ui.components.AppCard
 import com.mahfazty.smart.ui.components.ConfirmDialog
 import com.mahfazty.smart.ui.components.EmptyState
@@ -382,6 +383,61 @@ private fun BalanceBox(label: String, value: Double, color: Color, modifier: Mod
             Text(label, style = MaterialTheme.typography.labelSmall, color = LocalAppColors.current.muted)
             Spacer(Modifier.height(4.dp))
             Text(Money.fmt(value), style = MaterialTheme.typography.titleMedium, color = color)
+        }
+    }
+}
+
+/**
+ * 💠 بطاقة الرصيد العادي (كشف عليه/له) — كم بقي على العميل أو له الآن.
+ * منفصلة تماماً عن «الرصيد الحقيقي» (الذي يأتي من الشحن/السحب/التحويل فقط).
+ *
+ * الرقم يعدّ تصاعدياً (AnimatedNumber) عند أي إضافة/حذف/تعديل عملية، ولون
+ * الحالة يتبدل فورياً: أحمر «عليه» (دين) / أخضر «له» / محايد «متساوي».
+ */
+@Composable
+private fun ClientOpsBalanceCard(balance: Double, currency: String) {
+    val colors = LocalAppColors.current
+    val isDebt = balance > 0.0001
+    val isPay = balance < -0.0001
+    val accent = when {
+        isDebt -> colors.red
+        isPay -> colors.green
+        else -> colors.muted
+    }
+    val stateText = when {
+        isDebt -> "🔴 عليه (دين)"
+        isPay -> "🟢 له"
+        else -> "⚖️ متساوي"
+    }
+    AppCard(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("💠 الرصيد الحالي (عليه / له)", style = MaterialTheme.typography.labelMedium)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accent.copy(alpha = 0.14f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(stateText, style = MaterialTheme.typography.labelSmall, color = accent)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            AnimatedNumber(
+                target = kotlin.math.abs(balance),
+                format = { "${Money.fmt(it)} $currency" },
+                style = MaterialTheme.typography.headlineMedium.copy(color = accent),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "الرصيد العادي من عمليات الدين/السداد — منفصل عن الرصيد الحقيقي 🔐",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.muted,
+            )
         }
     }
 }
@@ -885,6 +941,11 @@ fun AccountOpsScreen(
     val ops = account?.operations ?: emptyList()
     // عداد حي للفواتير غير المسلمة (يُعرض في الفلتر)
     val pendingInvoicesCount = ops.count { it.isInvoice && !it.invoiceDelivered }
+    // 💠 الرصيد العادي الجاري بعد كل عملية — يُظهر كيف يتنقل الرصيد بين العمليات
+    // (مرتّب زمنياً بصرف النظر عن ترتيب العرض/الفلاتر، لأنه حالة الرصيد بعد كل عملية)
+    val runningAfterMap = remember(ops) {
+        com.mahfazty.smart.domain.WalletEngine.runningOpsBalance(ops)
+    }
 
     // ===== إصلاح act-3: بحث + فلتر نوع + فلتر مدى زمني =====
     val now = System.currentTimeMillis()
@@ -1039,6 +1100,16 @@ fun AccountOpsScreen(
                         }
                     }
                 }
+                }
+            }
+            // ===== 💠 الرصيد العادي (كشف عليه/له) — كم بقي على العميل أو له الآن =====
+            // مطلب: واجهة الحساب كانت تعرض «الرصيد الحقيقي» فقط دون الرصيد العادي.
+            item {
+                ElasticEntrance(1) {
+                    ClientOpsBalanceCard(
+                        balance = account?.opsBalance ?: 0.0,
+                        currency = currency,
+                    )
                 }
             }
             // ===== إضافة 5.1/5.2 من تقرير الفحص: لافتة تحذير للعميل الموقوف/القائمة السوداء =====
@@ -1296,6 +1367,7 @@ fun AccountOpsScreen(
                                 op = op,
                                 currency = currency,
                                 selected = op.id in selection,
+                                runningAfter = runningAfterMap[op.id],
                                 onClick = {
                                     if (selection.isNotEmpty()) onToggleSelect(op.id)
                                     else editingOp = op
@@ -1581,6 +1653,8 @@ private fun OpRow(
     op: ClientOperation,
     currency: String,
     selected: Boolean,
+    /** 💠 الرصيد العادي الجاري بعد هذه العملية (موجب = عليه، سالب = له) — اختياري */
+    runningAfter: Double? = null,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -1684,11 +1758,36 @@ private fun OpRow(
                     color = LocalAppColors.current.muted,
                 )
             }
-            Text(
-                Money.fmt(op.amount),
-                style = MaterialTheme.typography.titleMedium,
-                color = if (op.type == OpType.DEBT) LocalAppColors.current.red else LocalAppColors.current.green,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    Money.fmt(op.amount),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (op.type == OpType.DEBT) LocalAppColors.current.red else LocalAppColors.current.green,
+                )
+                // 💠 الرصيد العادي الجاري بعد هذه العملية — «كيف يتنقل الرصيد بين العمليات»:
+                // كل صف يكشف الرصيد الناتج بعده، فيقرأ المستخدم كشف الحساب كعدّاد متحرك.
+                runningAfter?.let { rb ->
+                    if (kotlin.math.abs(rb) < 0.0001) {
+                        Text(
+                            "بعدها: ⚖️ متساوي",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LocalAppColors.current.muted,
+                        )
+                    } else {
+                        val rbDebt = rb > 0.0
+                        val rbColor =
+                            if (rbDebt) LocalAppColors.current.red else LocalAppColors.current.green
+                        AnimatedNumber(
+                            target = kotlin.math.abs(rb),
+                            format = { "بعدها: ${if (rbDebt) "عليه" else "له"} ${Money.fmt(it)}" },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = rbColor,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            ),
+                        )
+                    }
+                }
+            }
         }
     }
 }

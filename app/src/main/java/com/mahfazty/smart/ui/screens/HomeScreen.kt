@@ -53,6 +53,7 @@ import com.mahfazty.smart.domain.model.Wallet
 import com.mahfazty.smart.ui.components.AnimatedNumber
 import com.mahfazty.smart.ui.components.AppCard
 import com.mahfazty.smart.ui.components.BarChart
+import com.mahfazty.smart.ui.components.CardGleamOverlay
 import com.mahfazty.smart.ui.components.ConfettiOverlay
 import com.mahfazty.smart.ui.components.animatedGradient
 import com.mahfazty.smart.ui.components.bounceClick
@@ -200,17 +201,6 @@ fun HomeScreen(
 
             // ===== كارت الرصيد =====
             item {
-                val appColors = LocalAppColors.current
-                // لمعان متحرك (معايرة 2026): نوار ضوء يعبر البطاقة
-                val cardInf = if (!reduceMotion) rememberInfiniteTransition(label = "cardShimmer") else null
-                val shimmerX = cardInf?.let {
-                    it.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart),
-                        label = "cardShimmerX",
-                    ).value
-                } ?: 0f
                 ElasticEntrance(1) {
                 Box(
                     modifier = Modifier
@@ -225,32 +215,9 @@ fun HomeScreen(
                         .background(animatedGradient(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary))
                         .padding(18.dp),
                 ) {
-                    // إضاءة شعاعية (معايرة 2026): وميض زجاجي من أعلى البطاقة
-                    androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
-                                center = Offset(size.width * 0.22f, size.height * 0.18f),
-                                radius = 700f,
-                            ),
-                            radius = 700f,
-                            center = Offset(size.width * 0.22f, size.height * 0.18f),
-                        )
-                    }
-                    if (!reduceMotion) {
-                        Box(
-                            Modifier
-                                .matchParentSize()
-                                .graphicsLayer { translationX = shimmerX * 1400f - 700f }
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(Color.Transparent, Motion.shimmerColor, Color.Transparent),
-                                        start = Offset(0f, 0f),
-                                        end = Offset(1400f, 500f),
-                                    ),
-                                ),
-                        )
-                    }
+                    // ✨ البريق الجديد (CardGleam): توهج يتنفس + موجتا ضوء تنسابان ثم تسكنان
+                    // — بديل أفضل من الشريط الضوئي الخطي المستمر (انسياب ثم سكون بدل سير ناقل)
+                    CardGleamOverlay(Modifier.matchParentSize())
                     Column {
                         Row(
                             modifier = Modifier.fillMaxWidth(),

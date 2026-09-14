@@ -88,6 +88,24 @@ object WalletEngine {
         ops.sumOf { if (it.type == OpType.DEBT) it.amount else -it.amount }
 
     /**
+     * الرصيد العادي «الجاري» بعد كل عملية — يُظهر كيف يتنقل الرصيد بين العمليات.
+     * يُرتَّب زمنياً (الأقدم أولاً) ويُراكَم: «عليه» يزيد، «له» ينقص.
+     * موجب = عليه، سالب = له. مستقل تماماً عن الرصيد الحقيقي (كشف حسابات).
+     *
+     * ملاحظة: لا نستخدم تاريخ العملية وحده كمفتاح لأن عمليتين قد تتشاركان نفس
+     * الطابع الزمني — نستخدم id العملية (فريد) ونرتب بالتاريخ ثم الـ id للاستقرار.
+     */
+    fun runningOpsBalance(ops: List<ClientOperation>): Map<Long, Double> {
+        val map = mutableMapOf<Long, Double>()
+        var running = 0.0
+        ops.sortedWith(compareBy({ it.date }, { it.id })).forEach { op ->
+            running += if (op.type == OpType.DEBT) op.amount else -op.amount
+            map[op.id] = running
+        }
+        return map
+    }
+
+    /**
      * عملية عليه تتطلب أن الرصيد الحقيقي ≥ المبلغ.
      * يُستخدم قبل الخصم؛ القيمة الفارغة = مسموح.
      */

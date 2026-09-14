@@ -298,6 +298,96 @@ fun animatedGradient(primary: Color, secondary: Color): Brush {
 }
 
 /**
+ * ✨ بريق بطاقة الرصيد (CardGleam) — البديل الأفضل لللمعان الخطي المستمر.
+ *
+ * المشكلة في اللمعان القديم: شريط ضوئي واحد يقطع البطاقة بسرعة ثابتة (Linear)
+ * كل 2.4 ثانية ثم «يقفز» للبداية (RepeatMode.Restart) — فيبدو سيراً ناقلاً
+ * ميكانيكياً لا بريقاً فاخراً.
+ *
+ * الحل هنا — طبقتان حيتان متكاملتان:
+ *  1) توهج شعاعي «يتنفس»: يعلو ويخفت ببطء (موجة Reverse ناعمة) فيمنح البطاقة
+ *     عمقاً حياً مستمراً بدل الإضاءة الثابتة الميتة.
+ *  2) موجتا ضوء مائلتان (عريضة + رفيعة متأخرة) تعبران البطاقة معاً بتسارع
+ *     واقعي (ease-in-out جيبي) خلال أول 45% من الدورة، ثم **تتوقفان** باقي
+ *     الدورة — دورة «انسياب ثم سكون». البريق يمر لحظياً ثم ترتاح العين،
+ *     والموجة الرفيعة المتأخرة تمنح إحساس العمق والسرعة.
+ *
+ * متكيّف مع عرض البطاقة (يُحسب بالنسبة من size.width) ويحترم «تقليل الحركة».
+ * يُوضع فوق خلفية البطاقة مباشرة: CardGleamOverlay(Modifier.matchParentSize())
+ */
+@Composable
+fun CardGleamOverlay(modifier: Modifier = Modifier) {
+    val reduce = rememberReduceMotion()
+    if (reduce) return
+    val inf = rememberInfiniteTransition(label = "cardGleam")
+    // دورة كاملة 3400ms: انسياب الضوء في أول 45% ثم سكون باقي الدورة
+    val cycle by inf.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(3400, easing = LinearEasing), RepeatMode.Restart),
+        label = "gleamCycle",
+    )
+    // تنفس التوهج: موجة ناعمة مستقلة (0→1→0 كل ~2.6s)
+    val breathe by inf.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "gleamBreathe",
+    )
+    androidx.compose.foundation.Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        // 1) التوهج الشعاعي المتنفس (عمق حي)
+        val glowAlpha = 0.08f + 0.10f * breathe
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White.copy(alpha = glowAlpha), Color.Transparent),
+                center = Offset(w * 0.24f, h * 0.14f),
+                radius = w * 0.95f,
+            ),
+            radius = w * 0.95f,
+            center = Offset(w * 0.24f, h * 0.14f),
+        )
+        // 2) موجتا الضوء: تعبران في أول 45% من الدورة (ease-in-out) ثم تختفيان (سكون)
+        if (cycle < 0.45f) {
+            val t = cycle / 0.45f
+            val ease = (1f - cos(PI.toFloat() * t)) / 2f // ease-in-out جيبية ناعمة
+            gleamStreak(progress = ease, bandWidth = w * 0.34f, alpha = 0.30f)
+            // موجة رفيعة متأخرة قليلاً — عمق وإحساس بالسرعة
+            gleamStreak(progress = (ease - 0.10f).coerceAtLeast(0f), bandWidth = w * 0.16f, alpha = 0.18f)
+        }
+    }
+}
+
+/** يرسم موجة ضوء مائلة (بزاوية -18°) يعبر مركزها من خارج اليسار إلى خارج اليمين. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.gleamStreak(
+    progress: Float,
+    bandWidth: Float,
+    alpha: Float,
+) {
+    val w = size.width
+    val h = size.height
+    if (alpha <= 0f || bandWidth <= 0f) return
+    // مركز الموجة يعبر من خارج اليسار (-bandWidth) إلى خارج اليمين (w + bandWidth)
+    val cx = -bandWidth + (w + 2f * bandWidth) * progress
+    rotate(degrees = -18f, pivot = Offset(w / 2f, h / 2f)) {
+        drawRect(
+            brush = Brush.horizontalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color.White.copy(alpha = alpha),
+                    Color.Transparent,
+                ),
+                startX = cx - bandWidth / 2f,
+                endX = cx + bandWidth / 2f,
+            ),
+            topLeft = Offset(cx - bandWidth / 2f, -h),
+            size = Size(bandWidth, h * 3f),
+        )
+    }
+}
+
+/**
  * 🕊️ أيقونة طافية — تعلو وتهبط بهدوء مستمر (شعار حول التطبيق، الحصالة...).
  *
  * معايرة 2026: حركة أكبر (12px) + حركة أفقية (±4px) فتصبح المسار بيضاوياً
@@ -496,43 +586,8 @@ fun TypewriterReveal(
     Text(ann, style = style, color = color, modifier = modifier)
 }
 
-/**
- * 🫧 Morph — انتقال تدريجي بين شكلين (Shape).
- * إذا كان الشكلان كلاهما زوايا دائرية (RoundedCornerShape) يُستوفى نصف قطر
- * كل زاوية على حدة، وإلا يُبَدَّل الشكل عند نقطة المنتصف.
- */
-@Composable
-fun MorphTransition(
-    from: Shape,
-    to: Shape,
-    progress: Float,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val p = progress.coerceIn(0f, 1f)
-    val density = LocalDensity.current
-    val shape: Shape = remember(from, to, p, density) {
-        val f = from as? RoundedCornerShape
-        val t = to as? RoundedCornerShape
-        if (f != null && t != null) {
-            // زوايا RoundedCornerShape نوعها CornerSize لا CornerRadius — نُدرّج بالبكسل عبر Density
-            // (مرجع 100px يؤثر فقط على الزوايا المئوية %؛ زوايا dp/px تُقيَّم بدقة تامة)
-            val reference = Size(100f, 100f)
-            val lerpCorner = { a: CornerSize, b: CornerSize ->
-                val ra = a.toPx(reference, density)
-                val rb = b.toPx(reference, density)
-                CornerSize(ra + (rb - ra) * p)
-            }
-            RoundedCornerShape(
-                topStart = lerpCorner(f.topStart, t.topStart),
-                topEnd = lerpCorner(f.topEnd, t.topEnd),
-                bottomStart = lerpCorner(f.bottomStart, t.bottomStart),
-                bottomEnd = lerpCorner(f.bottomEnd, t.bottomEnd),
-            )
-        } else if (p < 0.5f) from else to
-    }
-    Box(modifier = modifier.clip(shape)) { content() }
-}
+// ملاحظة فحص: حُذفت MorphTransition — كانت دالة ميتة (معرّفة ولا تُستدعى في أي شاشة).
+// عند الحاجة لانتقال تدريجي بين شكلين مستقبلاً تُكتب وتُستخدم فعلياً (نهج SwingCardEntrance).
 
 /**
  * 🌊 ملء سائل (Liquid Fill) — موجتان متراكمتان ترتفعان/تنخفضان حسب [progress].

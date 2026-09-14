@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>تحسينات الرصيد والحركة — محفظتي الذكية</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lalezar&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#10131a;
+    --ink-2:#161a24;
+    --panel:#1c2130;
+    --panel-2:#232a3d;
+    --line:rgba(255,255,255,.08);
+    --text:#eef1f8;
+    --muted:#98a0b3;
+    --primary:#6C5CE7;
+    --primary-2:#A29BFE;
+    --green:#00B894;
+    --red:#FF7675;
+    --gold:#FDCB6E;
+    --disp:'Lalezar', 'Tajawal', sans-serif;
+    --body:'Tajawal', sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:var(--body);
+    background:var(--ink);
+    color:var(--text);
+    overflow-x:hidden;
+  }
+  /* ===== خلفية محيطية متعددة الطبقات ===== */
+  .ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .ambient::before{
+    content:"";position:absolute;inset:-20%;
+    background:
+      radial-gradient(52rem 34rem at 85% -8%, rgba(108,92,231,.20), transparent 60%),
+      radial-gradient(44rem 30rem at 8% 108%, rgba(0,184,148,.12), transparent 60%),
+      radial-gradient(30rem 22rem at 12% 12%, rgba(253,203,110,.07), transparent 60%);
+  }
+  .ambient::after{
+    content:"";position:absolute;inset:0;
+    background-image:radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size:26px 26px;
+    mask-image:linear-gradient(180deg, rgba(0,0,0,.5), transparent 70%);
+  }
+  .float-glyph{position:absolute;font-family:var(--disp);color:rgba(162,155,254,.10);user-select:none;animation:drift 14s ease-in-out infinite alternate}
+  .float-glyph.g1{font-size:7rem;top:6%;left:-2%;animation-delay:0s}
+  .float-glyph.g2{font-size:5rem;bottom:10%;right:-1%;animation-delay:-4s;color:rgba(0,184,148,.09)}
+  .float-glyph.g3{font-size:4rem;top:44%;right:12%;animation-delay:-8s;color:rgba(253,203,110,.08)}
+  @keyframes drift{from{transform:translateY(-14px) rotate(-4deg)}to{transform:translateY(16px) rotate(4deg)}}
+
+  .stage{position:relative;z-index:1;max-width:430px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 18px) 18px 60px;min-height:100%}
+
+  /* ===== الترويسة ===== */
+  .masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:20px;animation:rise .6s cubic-bezier(.2,.9,.3,1.2) both}
+  .masthead .kicker{display:inline-flex;align-items:center;gap:7px;font-size:.72rem;font-weight:700;letter-spacing:.04em;color:var(--gold);background:rgba(253,203,110,.10);border:1px solid rgba(253,203,110,.25);padding:5px 12px;border-radius:99px;margin-bottom:10px}
+  .masthead .kicker .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+  .masthead h1{font-family:var(--disp);font-size:2.1rem;line-height:1.15;font-weight:400}
+  .masthead h1 em{font-style:normal;color:var(--primary-2)}
+  .masthead p{color:var(--muted);font-size:.85rem;margin-top:6px;line-height:1.7}
+  .logo{flex:none;width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-size:1.6rem;
+    background:linear-gradient(135deg,var(--primary),var(--primary-2));
+    box-shadow:0 10px 26px rgba(108,92,231,.4);animation:bob 4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+
+  /* ===== بطاقة قسم ===== */
+  .demo{background:linear-gradient(180deg,var(--panel),var(--ink-2));border:1px solid var(--line);border-radius:26px;padding:20px 18px 22px;margin-bottom:26px;position:relative;overflow:hidden;animation:rise .6s cubic-bezier(.2,.9,.3,1.2) both}
+  .demo:nth-of-type(2){animation-delay:.08s}
+  .demo::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--primary-2),transparent);opacity:.6}
+  .demo-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .demo-head .num{font-family:var(--disp);font-size:1.5rem;color:var(--primary-2);flex:none;width:38px;height:38px;border-radius:13px;display:grid;place-items:center;background:rgba(108,92,231,.14);border:1px solid rgba(108,92,231,.3)}
+  .demo-head h2{font-size:1.02rem;font-weight:800}
+  .demo-head small{display:block;color:var(--muted);font-size:.74rem;font-weight:500;margin-top:2px}
+
+  /* ===== مفتاح قبل / بعد ===== */
+  .toggle{display:flex;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:4px;margin-bottom:16px;position:relative}
+  .toggle button{flex:1;position:relative;z-index:1;background:none;border:none;color:var(--muted);font-family:var(--body);font-weight:800;font-size:.88rem;padding:9px 0;border-radius:11px;cursor:pointer;transition:color .3s}
+  .toggle button.on{color:#fff}
+  .toggle .thumb{position:absolute;top:4px;bottom:4px;width:calc(50% - 4px);border-radius:11px;background:linear-gradient(135deg,var(--primary),var(--primary-2));box-shadow:0 6px 16px rgba(108,92,231,.45);transition:transform .38s cubic-bezier(.3,1.4,.4,1)}
+  /* dir=rtl: "قبل" هو الأول (يمين) */
+  .toggle[data-mode="after"] .thumb{transform:translateX(calc(-100% - 0px));left:auto}
+  .toggle .thumb{right:4px}
+  .toggle[data-mode="after"] .thumb{right:calc(50% + 0px)}
+
+  .pane{display:none}
+  .pane.show{display:block;animation:paneIn .45s cubic-bezier(.2,.9,.3,1.15) both}
+  @keyframes paneIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+  .pane-tag{display:inline-block;font-size:.7rem;font-weight:800;padding:4px 12px;border-radius:99px;margin-bottom:12px}
+  .pane-tag.before{color:var(--red);background:rgba(255,118,117,.12);border:1px solid rgba(255,118,117,.3)}
+  .pane-tag.after{color:var(--green);background:rgba(0,184,148,.12);border:1px solid rgba(0,184,148,.3)}
+
+  /* ===== بطاقة الرصيد (تحاكي التطبيق) ===== */
+  .balance-card{position:relative;border-radius:24px;padding:18px;color:#fff;overflow:hidden;
+    background:linear-gradient(120deg,#5b4bd4,#6C5CE7 40%,#8f7bf0 75%,#A29BFE);
+    background-size:200% 200%;animation:gradShift 9s ease-in-out infinite alternate;
+    box-shadow:0 18px 40px rgba(108,92,231,.35)}
+  @keyframes gradShift{from{background-position:0% 20%}to{background-position:100% 80%}}
+  .bc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;position:relative;z-index:2}
+  .bc-top .lbl{font-size:.78rem;font-weight:700;opacity:.95}
+  .bc-bank{display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.28);border-radius:20px;padding:5px 11px;font-size:.72rem;font-weight:700}
+  .bc-bank .chip{background:rgba(0,0,0,.3);border-radius:9px;padding:2px 8px}
+  .bc-amount{font-family:var(--disp);font-size:2.5rem;line-height:1.1;position:relative;z-index:2;text-shadow:0 2px 14px rgba(0,0,0,.25)}
+  .bc-amount small{font-size:1rem;opacity:.85;margin-right:4px}
+  .bc-wealth{display:flex;align-items:center;gap:9px;margin-top:10px;position:relative;z-index:2}
+  .bc-wealth .ic{width:27px;height:27px;border-radius:8px;background:rgba(255,255,255,.18);display:grid;place-items:center;font-size:.8rem}
+  .bc-wealth .w-lbl{font-size:.7rem;opacity:.95}
+  .bc-wealth .w-val{font-size:.82rem;font-weight:800}
+  .bc-foot{margin-top:12px;font-size:.72rem;opacity:.9;position:relative;z-index:2}
+
+  /* --- قبل: شريط ضوئي خطي مستمر (سير ناقل ميكانيكي) --- */
+  .sweep-layer{position:absolute;inset:0;z-index:1;overflow:hidden;border-radius:inherit}
+  .before .sweep-band{position:absolute;top:-40%;bottom:-40%;width:34%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.32),transparent);
+    transform:skewX(-18deg);animation:conveyor 2.4s linear infinite}
+  @keyframes conveyor{from{right:-45%}to{right:115%}}
+  /* --- بعد: توهج يتنفس + موجتا ضوء تنسابان ثم تسكنان --- */
+  .after .breathe{position:absolute;inset:0;z-index:1;border-radius:inherit;
+    background:radial-gradient(60rem 40rem at 24% 12%, rgba(255,255,255,.20), transparent 55%);
+    animation:breathe 2.6s ease-in-out infinite alternate}
+  @keyframes breathe{from{opacity:.35}to{opacity:1}}
+  .after .gleam{position:absolute;top:-40%;bottom:-40%;width:34%;transform:skewX(-18deg);z-index:1;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.34),transparent);
+    animation:gleamSweep 3.4s cubic-bezier(.45,0,.25,1) infinite;opacity:0}
+  .after .gleam.thin{width:16%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.20),transparent);animation-delay:.12s}
+  @keyframes gleamSweep{
+    0%{right:-45%;opacity:0}
+    6%{opacity:1}
+    40%{right:115%;opacity:1}
+    45%{opacity:0}
+    100%{right:115%;opacity:0}
+  }
+
+  .caption{margin-top:12px;font-size:.76rem;color:var(--muted);line-height:1.8;border-right:3px solid var(--panel-2);padding-right:10px}
+  .caption b{color:var(--text)}
+  .caption .bad{color:var(--red)}
+  .caption .good{color:var(--green)}
+
+  /* ===== شاشة العميل ===== */
+  .client-card{background:var(--panel-2);border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-bottom:10px}
+  .cc-title{font-size:.78rem;font-weight:800;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+  .cc-amount{font-family:var(--disp);font-size:1.9rem;margin-top:6px;color:var(--primary-2)}
+  .cc-amount small{font-size:.85rem;opacity:.8;margin-right:3px}
+  .cc-sub{font-size:.68rem;color:var(--muted);margin-top:4px}
+  /* بطاقة الرصيد العادي (الجديدة) */
+  .ops-balance{position:relative;overflow:hidden;border-radius:18px;padding:14px 16px;margin-bottom:12px;color:#fff;
+    background:linear-gradient(135deg,#0e8f74,#00B894);box-shadow:0 12px 28px rgba(0,184,148,.3)}
+  .ops-balance.debt{background:linear-gradient(135deg,#c0524f,#FF7675);box-shadow:0 12px 28px rgba(255,118,117,.3)}
+  .ob-top{display:flex;justify-content:space-between;align-items:center}
+  .ob-top .lbl{font-size:.76rem;font-weight:800}
+  .ob-chip{font-size:.68rem;font-weight:800;background:rgba(0,0,0,.22);border-radius:99px;padding:4px 11px}
+  .ob-amount{font-family:var(--disp);font-size:2.2rem;margin-top:7px}
+  .ob-amount small{font-size:.9rem;opacity:.85;margin-right:3px}
+  .ob-sub{font-size:.66rem;opacity:.85;margin-top:3px}
+  .ops-balance .gleam{position:absolute;top:-40%;bottom:-40%;width:26%;transform:skewX(-18deg);
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.3),transparent);animation:gleamSweep 3.8s cubic-bezier(.45,0,.25,1) infinite;opacity:0}
+
+  .op-row{display:flex;align-items:center;gap:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:15px;padding:11px 13px;margin-bottom:8px;transition:transform .3s,border-color .3s}
+  .op-row.new{animation:opIn .55s cubic-bezier(.2,1.2,.35,1) both}
+  @keyframes opIn{from{opacity:0;transform:translateY(-16px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+  .op-badge{flex:none;font-size:.64rem;font-weight:800;border-radius:9px;padding:4px 9px}
+  .op-badge.debt{color:var(--red);background:rgba(255,118,117,.13)}
+  .op-badge.pay{color:var(--green);background:rgba(0,184,148,.13)}
+  .op-main{flex:1;min-width:0}
+  .op-note{font-size:.76rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .op-date{font-size:.64rem;color:var(--muted);margin-top:2px}
+  .op-side{text-align:left;flex:none}
+  .op-amt{font-weight:800;font-size:.9rem}
+  .op-amt.debt{color:var(--red)} .op-amt.pay{color:var(--green)}
+  .op-run{font-size:.66rem;font-weight:800;margin-top:3px}
+  .op-run.debt{color:var(--red)} .op-run.pay{color:var(--green)} .op-run.zero{color:var(--muted)}
+  .op-run.flash{animation:runFlash .8s ease-out}
+  @keyframes runFlash{0%{background:rgba(253,203,110,.35);border-radius:6px}100%{background:transparent}}
+
+  .add-op{width:100%;margin-top:6px;border:none;border-radius:15px;padding:13px;font-family:var(--body);font-weight:800;font-size:.9rem;color:#fff;cursor:pointer;
+    background:linear-gradient(135deg,var(--primary),var(--primary-2));box-shadow:0 10px 24px rgba(108,92,231,.35);transition:transform .18s,box-shadow .18s}
+  .add-op:active{transform:scale(.96)}
+  .add-hint{text-align:center;font-size:.68rem;color:var(--muted);margin-top:9px}
+
+  /* ===== ملخص ===== */
+  .summary{background:linear-gradient(180deg,var(--panel),var(--ink-2));border:1px solid var(--line);border-radius:24px;padding:20px 18px;animation:rise .6s .16s cubic-bezier(.2,.9,.3,1.2) both}
+  .summary h3{font-family:var(--disp);font-size:1.25rem;margin-bottom:12px;color:var(--gold)}
+  .sum-item{display:flex;gap:11px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:.8rem;line-height:1.7}
+  .sum-item:last-child{border-bottom:none}
+  .sum-item .ic{flex:none;width:26px;height:26px;border-radius:9px;display:grid;place-items:center;font-size:.85rem;background:rgba(108,92,231,.14)}
+  .sum-item b{color:var(--primary-2)}
+  .foot{text-align:center;color:var(--muted);font-size:.7rem;margin-top:26px;line-height:1.8}
+  .foot .heart{color:var(--red)}
+</style>
+</head>
+<body>
+  <div class="ambient">
+    <span class="float-glyph g1">﷼</span>
+    <span class="float-glyph g2">💰</span>
+    <span class="float-glyph g3">٭</span>
+  </div>
+
+  <div class="stage">
+
+    <header class="masthead">
+      <div>
+        <span class="kicker"><span class="dot"></span> تحديث جديد · v2.8</span>
+        <h1>تحسينات <em>الرصيد</em> والحركة</h1>
+        <p>لمعان أرقى لبطاقة الرصيد، وكشف «عليه / له» حيّ يتنقّل بين العمليات — قبل وبعد.</p>
+      </div>
+      <div class="logo">💰</div>
+    </header>
+
+    <!-- ============ 1) بطاقة الرصيد الرئيسية ============ -->
+    <section class="demo">
+      <div class="demo-head">
+        <span class="num">١</span>
+        <div>
+          <h2>أنميشن بطاقة الرصيد (الرئيسية)</h2>
+          <small>الكاش والبنك — اللمعان المتكرر</small>
+        </div>
+      </div>
+
+      <div class="toggle" data-mode="before" id="tgl1">
+        <span class="thumb"></span>
+        <button class="on" data-pane="before">قبل</button>
+        <button data-pane="after">بعد</button>
+      </div>
+
+      <div class="pane show" data-pane="before">
+        <span class="pane-tag before">قبل — سير ناقل ميكانيكي</span>
+        <div class="balance-card before">
+          <div class="sweep-layer"><div class="sweep-band"></div></div>
+          <div class="bc-top">
+            <span class="lbl">💵 الكاش الحالي</span>
+            <span class="bc-bank">🏦 البنك <span class="chip">٨٬٤٠٠</span></span>
+          </div>
+          <div class="bc-amount">١٢٬٥٠٠ <small>ر.ي</small></div>
+          <div class="bc-wealth">
+            <span class="ic">💳</span>
+            <span><span class="w-lbl">إجمالي ثروتك</span><br><span class="w-val">٢٠٬٩٠٠ ر.ي</span></span>
+          </div>
+          <div class="bc-foot">الرصيد المتاح (بنك + كاش): ٢٠٬٩٠٠ ر.ي</div>
+        </div>
+        <p class="caption"><span class="bad">المشكلة:</span> شريط ضوئي واحد يقطع البطاقة بسرعة ثابتة كل ٢٫٤ ث ثم <b>يقفز</b> للبداية — حركة خطية لا تتنفس، تشتت العين وتبدو رخيصة.</p>
+      </div>
+
+      <div class="pane" data-pane="after">
+        <span class="pane-tag after">بعد — انسياب ثم سكون</span>
+        <div class="balance-card after">
+          <div class="breathe"></div>
+          <div class="gleam"></div>
+          <div class="gleam thin"></div>
+          <div class="bc-top">
+            <span class="lbl">💵 الكاش الحالي</span>
+            <span class="bc-bank">🏦 البنك <span class="chip">٨٬٤٠٠</span></span>
+          </div>
+          <div class="bc-amount">١٢٬٥٠٠ <small>ر.ي</small></div>
+          <div class="bc-wealth">
+            <span class="ic">💳</span>
+            <span><span class="w-lbl">إجمالي ثروتك</span><br><span class="w-val">٢٠٬٩٠٠ ر.ي</span></span>
+          </div>
+          <div class="bc-foot">الرصيد المتاح (بنك + كاش): ٢٠٬٩٠٠ ر.ي</div>
+        </div>
+        <p class="caption"><span class="good">الحل:</span> توهج شعاعي <b>يتنفس</b> باستمرار + موجتا ضوء (عريضة ورفيعة) تنسابان بتسارع واقعي خلال ٤٥٪ من الدورة ثم <b>تسكنان</b> — بريق لحظي فاخر ترتاح بعده العين، ويتكيّف مع عرض البطاقة ويحترم «تقليل الحركة».</p>
+      </div>
+    </section>
+
+    <!-- ============ 2) شاشة حساب العميل ============ -->
+    <section class="demo">
+      <div class="demo-head">
+        <span class="num">٢</span>
+        <div>
+          <h2>شاشة حساب العميل — كشف عليه / له</h2>
+          <small>الرصيد العادي الحالي + الرصيد الجاري بين العمليات</small>
+        </div>
+      </div>
+
+      <div class="toggle" data-mode="before" id="tgl2">
+        <span class="thumb"></span>
+        <button class="on" data-pane="before">قبل</button>
+        <button data-pane="after">بعد</button>
+      </div>
+
+      <!-- قبل -->
+      <div class="pane show" data-pane="before">
+        <span class="pane-tag before">قبل — الرصيد الحقيقي فقط</span>
+        <div class="client-card">
+          <div class="cc-title">💰 الرصيد الحقيقي لهذا الحساب <span>🔐</span></div>
+          <div class="cc-amount">٥٬٠٠٠ <small>ر.ي</small></div>
+          <div class="cc-sub">يأتي من الشحن والسحب والتحويلات فقط</div>
+        </div>
+        <div class="op-row"><span class="op-badge debt">🔴 عليه (دين)</span><div class="op-main"><div class="op-note">فاتورة كهرباء</div><div class="op-date">١٥ يناير</div></div><div class="op-side"><div class="op-amt debt">٣٬٠٠٠</div></div></div>
+        <div class="op-row"><span class="op-badge pay">🟢 له (سداد)</span><div class="op-main"><div class="op-note">دفعة نقدية</div><div class="op-date">١٨ يناير</div></div><div class="op-side"><div class="op-amt pay">١٬٠٠٠</div></div></div>
+        <p class="caption"><span class="bad">المشكلة:</span> لا يوجد <b>الرصيد العادي</b> — لا تعرف هل العميل «عليه» أم «له» وكم؟ والعمليات تعرض المبلغ فقط دون أن ترى <b>كيف يتنقّل الرصيد</b> من عملية لأخرى.</p>
+      </div>
+
+      <!-- بعد -->
+      <div class="pane" data-pane="after">
+        <span class="pane-tag after">بعد — كشف حيّ يعدّ ويتلوّن</span>
+        <div class="client-card">
+          <div class="cc-title">💰 الرصيد الحقيقي لهذا الحساب <span>🔐</span></div>
+          <div class="cc-amount">٥٬٠٠٠ <small>ر.ي</small></div>
+          <div class="cc-sub">يأتي من الشحن والسحب والتحويلات فقط</div>
+        </div>
+
+        <div class="ops-balance debt" id="obCard">
+          <div class="gleam"></div>
+          <div class="ob-top"><span class="lbl">💠 الرصيد الحالي (عليه / له)</span><span class="ob-chip" id="obChip">🔴 عليه (دين)</span></div>
+          <div class="ob-amount"><span id="obAmount">٢٬٠٠٠</span> <small>ر.ي</small></div>
+          <div class="ob-sub">الرصيد العادي من عمليات الدين/السداد — منفصل عن الرصيد الحقيقي 🔐</div>
+        </div>
+
+        <div id="opsList">
+          <div class="op-row"><span class="op-badge pay">🟢 له (سداد)</span><div class="op-main"><div class="op-note">دفعة نقدية</div><div class="op-date">١٨ يناير</div></div><div class="op-side"><div class="op-amt pay">١٬٠٠٠</div><div class="op-run pay" data-run="-2000">بعدها: له ٢٬٠٠٠</div></div></div>
+          <div class="op-row"><span class="op-badge debt">🔴 عليه (دين)</span><div class="op-main"><div class="op-note">فاتورة كهرباء</div><div class="op-date">١٥ يناير</div></div><div class="op-side"><div class="op-amt debt">٣٬٠٠٠</div><div class="op-run debt" data-run="-1000">بعدها: له ١٬٠٠٠</div></div></div>
+          <div class="op-row"><span class="op-badge debt">🔴 عليه (دين)</span><div class="op-main"><div class="op-note">بضاعة أولى</div><div class="op-date">١٠ يناير</div></div><div class="op-side"><div class="op-amt debt">٢٬٠٠٠</div><div class="op-run pay" data-run="2000">بعدها: عليه ٢٬٠٠٠</div></div></div>
+        </div>
+
+        <button class="add-op" id="addOp">＋ أضف عملية «عليه ٥٠٠» وشاهد الرصيد يتنقّل</button>
+        <p class="add-hint">كل صف يكشف الرصيد <b>بعده</b> — اقرأ الكشف من الأسفل للأعلى وترى الرصيد يتحرك</p>
+      </div>
+    </section>
+
+    <!-- ============ ملخص ============ -->
+    <section class="summary">
+      <h3>ماذا تغيّر في الكود؟</h3>
+      <div class="sum-item"><span class="ic">✨</span><div><b>CardGleamOverlay</b> — مكوّن بريق جديد (توهج يتنفس + موجتا ضوء تنسابان ثم تسكنان) حلّ محل اللمعان الخطي في بطاقة الرصيد الرئيسية.</div></div>
+      <div class="sum-item"><span class="ic">💠</span><div><b>ClientOpsBalanceCard</b> — بطاقة «الرصيد الحالي (عليه/له)» في شاشة الحساب، تعدّ تصاعدياً وتتلوّن حسب الحالة.</div></div>
+      <div class="sum-item"><span class="ic">🧮</span><div><b>runningOpsBalance</b> — دالة في WalletEngine تحسب الرصيد العادي الجاري بعد كل عملية، ويظهر تحت كل صف «بعدها: عليه/له …».</div></div>
+      <div class="sum-item"><span class="ic">🧹</span><div><b>تنظيف</b> — حذف MorphTransition (دالة ميتة لم تُستدعَ قط) على نهج SwingCardEntrance.</div></div>
+    </section>
+
+    <p class="foot">محفظتي الذكية 💰 — تطبيق شخصي<br>صُنع بعناية <span class="heart">❤</span> · كوتلن + جيت باك كومبوز</p>
+  </div>
+
+<script>
+  // ===== مفاتيح قبل / بعد =====
+  document.querySelectorAll('.toggle').forEach(tgl=>{
+    const panes = tgl.parentElement.querySelectorAll(':scope > .pane');
+    tgl.querySelectorAll('button').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const mode = btn.dataset.pane;
+        if(tgl.dataset.mode===mode) return;
+        tgl.dataset.mode = mode;
+        tgl.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b===btn));
+        panes.forEach(p=>{
+          const show = p.dataset.pane===mode;
+          p.classList.toggle('show', show);
+          if(show && mode==='after'){ runCountUps(p); }
+        });
+      });
+    });
+  });
+
+  // ===== أرقام هندية =====
+  const AR='٠١٢٣٤٥٦٧٨٩';
+  const toAr = n => String(Math.round(n)).replace(/\d/g,d=>AR[d]).replace(/\B(?=(\d{3})+(?!\d))/g,'٬');
+
+  // ===== عدّاد تصاعدي =====
+  function countUp(el, to, dur=650){
+    const from = 0, t0 = performance.now();
+    function frame(t){
+      const k = Math.min(1,(t-t0)/dur);
+      const e = 1-Math.pow(1-k,3); // ease-out cubic
+      el.textContent = toAr(from+(to-from)*e);
+      if(k<1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  function runCountUps(pane){
+    // بطاقة الرصيد العادي
+    const ob = pane.querySelector('#obAmount');
+    if(ob){ countUp(ob, 2000, 700); }
+    // أرصدة «بعدها» — تُقرأ قيمتها المخزنة
+    pane.querySelectorAll('.op-run').forEach((r,i)=>{
+      const v = Math.abs(parseInt(r.dataset.run||'0',10));
+      setTimeout(()=>{ 
+        const txt = r.textContent;
+        const num = txt.replace(/^[^٠-٩]*/,'');
+        r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash');
+      }, i*120);
+    });
+  }
+
+  // ===== محاكاة إضافة عملية «عليه ٥٠٠» =====
+  const addBtn = document.getElementById('addOp');
+  let extraOps = [];
+  const baseOps = [ {t:'pay', amt:1000, note:'دفعة نقدية'}, {t:'debt', amt:3000, note:'فاتورة كهرباء'}, {t:'debt', amt:2000, note:'بضاعة أولى'} ];
+  addBtn.addEventListener('click',()=>{
+    extraOps.push({t:'debt', amt:500, note:'عملية جديدة '+toAr(extraOps.length+1)});
+    renderOps();
+  });
+
+  function renderOps(){
+    // الرصيد الجاري: مرتب زمنياً (الأقدم أولاً). baseOps معكوسة = الأقدم أولاً
+    const chrono = [...baseOps].reverse().map(o=>({...o})); 
+    const added = extraOps.map(o=>({...o}));
+    const all = [...chrono, ...added]; // الأقدم → الأحدث (المضافة أخيراً)
+    let run = 0;
+    const runs = all.map(o=>{ run += (o.t==='debt'? o.amt : -o.amt); return run; });
+    // العرض: الأحدث أولاً
+    const list = document.getElementById('opsList');
+    list.innerHTML='';
+    for(let i=all.length-1;i>=0;i--){
+      const o=all[i], r=runs[i];
+      const isNew = i>=chrono.length;
+      const row=document.createElement('div');
+      row.className='op-row'+(isNew?' new':'');
+      const rc = r>0?'debt':(r<0?'pay':'zero');
+      const runTxt = r===0?'بعدها: ⚖️ متساوي':('بعدها: '+(r>0?'عليه ':'له ')+toAr(Math.abs(r)));
+      row.innerHTML =
+        '<span class="op-badge '+(o.t==='debt'?'debt':'pay')+'">'+(o.t==='debt'?'🔴 عليه (دين)':'🟢 له (سداد)')+'</span>'+
+        '<div class="op-main"><div class="op-note">'+o.note+'</div><div class="op-date">اليوم</div></div>'+
+        '<div class="op-side"><div class="op-amt '+(o.t==='debt'?'debt':'pay')+'">'+toAr(o.amt)+'</div>'+
+        '<div class="op-run '+rc+' flash">'+runTxt+'</div></div>';
+      list.appendChild(row);
+    }
+    // تحديث بطاقة الرصيد العادي بعدّ تصاعدي
+    const total = run;
+    const card=document.getElementById('obCard');
+    const chip=document.getElementById('obChip');
+    const amt=document.getElementById('obAmount');
+    card.classList.toggle('debt', total>0);
+    chip.textContent = total>0?'🔴 عليه (دين)':(total<0?'🟢 له':'⚖️ متساوي');
+    countUp(amt, Math.abs(total), 700);
+  }
+</script>
+</body>
+</html>
