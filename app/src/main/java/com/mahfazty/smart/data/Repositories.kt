@@ -15,6 +15,7 @@ import com.mahfazty.smart.data.db.toDomain
 import com.mahfazty.smart.data.db.toEntity
 import com.mahfazty.smart.data.db.toJsonOrNull
 import com.mahfazty.smart.data.db.toMaterials
+import com.mahfazty.smart.domain.BackupParser
 import com.mahfazty.smart.domain.Ids
 import com.mahfazty.smart.domain.Money
 import com.mahfazty.smart.domain.WalletEngine
@@ -503,8 +504,13 @@ class WalletRepository(
     data class ImportResult(val ok: Boolean, val message: String)
 
     suspend fun importBackup(text: String): ImportResult = runCatching {
-        val root = JSONObject(text)
-        val data = root.optJSONObject("data") ?: return@runCatching ImportResult(false, "الملف لا يحتوي على بيانات صالحة")
+        // إصلاح استيراد النسخ الاحتياطية: التحليل والتحقق معزولان في BackupParser (domain)
+        // — تُفحص كل سجلات الملف قبل لمس قاعدة البيانات، وترجع رسالة الخطأ بموقع المشكلة
+        // بدقة (القسم + رقم السجل + المفتاح) بدل رسالة «تعذر قراءة الملف» الغامضة.
+        // الاستيراد يبقى ذرّيًا: إما كل الملف أو لا شيء (db.withTransaction).
+        val parsed = BackupParser.parse(text)
+        if (!parsed.ok) return@runCatching ImportResult(false, parsed.errorMessage())
+        val b = parsed.backup!!
         var txCount = 0
         var goalCount = 0
         var clientCount = 0
@@ -514,135 +520,78 @@ class WalletRepository(
         db.withTransaction {
             // 1) الأهداف أولاً — نبني خريطة إعادة الترميز (معرف قديم ← جديد) لربط العمليات بها
             val goalIdMap = mutableMapOf<Long, Long>()
-            data.optJSONArray("goals")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val newId = Ids.next()
-                    val oldId = o.optLong("id", -1L)
-                    if (oldId > 0) goalIdMap[oldId] = newId
-                    db.goalDao().insert(GoalEntity(
-                        id = newId, name = o.getString("name"), target = o.getDouble("target"),
-                        icon = o.optString("icon", "💻"), opening = o.optDouble("opening"),
-                    ))
-                    goalCount++
-                }
+            b.goals.forEach { g ->
+                val newId = Ids.next()
+                if (g.oldId > 0) goalIdMap[g.oldId] = newId
+                db.goalDao().insert(GoalEntity(
+                    id = newId, name = g.name, target = g.target, icon = g.icon, opening = g.opening,
+                ))
+                goalCount++
             }
             // 2) العمليات — مع إعادة ربط كل عملية بهدفها الجديد
-            data.optJSONArray("transactions")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val oldGoal = if (o.isNull("goalId")) null else o.optLong("goalId")
-                    val newGoal = oldGoal?.let { goalIdMap[it] }
-                    db.transactionDao().insert(TransactionEntity(
-                        id = Ids.next(),
-                        type = runCatching { TxType.valueOf(o.getString("type")) }.getOrDefault(TxType.EXPENSE).name,
-                        amount = o.getDouble("amount"),
-                        category = o.getString("category"),
-                        note = if (o.isNull("note")) null else o.getString("note"),
-                        date = o.getLong("date"),
-                        goalId = newGoal,
-                        wallet = runCatching { Wallet.valueOf(o.getString("wallet")) }.getOrDefault(Wallet.CASH).name,
-                    ))
-                    txCount++
-                }
+            b.transactions.forEach { t ->
+                db.transactionDao().insert(TransactionEntity(
+                    id = Ids.next(),
+                    type = t.type.name,
+                    amount = t.amount,
+                    category = t.category,
+                    note = t.note,
+                    date = t.date,
+                    goalId = t.oldGoalId?.let { goalIdMap[it] },
+                    wallet = t.wallet.name,
+                ))
+                txCount++
             }
-            data.optJSONObject("savings")?.let { s ->
-                db.savingsDao().upsert(SavingsEntity(1, s.optDouble("opening"), s.optDouble("goal", 50_000.0)))
-            }
+            if (b.hasSavings) db.savingsDao().upsert(SavingsEntity(1, b.savingsOpening, b.savingsGoal))
             // 3) الإعدادات — استيراد كل المفاتيح (الحدود، الإخفاء، الأرصدة الافتتاحية...)
-            data.optJSONObject("settings")?.let { s ->
-                val keys = s.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    if (!s.isNull(k)) {
-                        val v = s.get(k).toString()
-                        if (v.isNotBlank()) db.settingsDao().upsert(SettingEntity(k, v))
-                    }
-                }
-            }
+            b.settings.forEach { (k, v) -> db.settingsDao().upsert(SettingEntity(k, v)) }
             // 4) العملاء — مع خريطة إعادة الترميز
             val clientIdMap = mutableMapOf<Long, Long>()
-            data.optJSONArray("clients")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val newId = Ids.next()
-                    val oldId = o.optLong("id", -1L)
-                    if (oldId > 0) clientIdMap[oldId] = newId
-                    db.clientDao().insert(ClientEntity(
-                        id = newId, name = o.getString("name"),
-                        phone = if (o.isNull("phone")) null else o.getString("phone"),
-                        photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
-                        // النسخ القديمة بلا هذا المفتاح → «نشط» (إصلاح data-3)
-                        status = o.optString("status", "active"),
-                    ))
-                    clientCount++
-                }
+            b.clients.forEach { c ->
+                val newId = Ids.next()
+                if (c.oldId > 0) clientIdMap[c.oldId] = newId
+                db.clientDao().insert(ClientEntity(
+                    id = newId, name = c.name, phone = c.phone, photoPath = c.photoPath, status = c.status,
+                ))
+                clientCount++
             }
             // 5) حسابات العملاء — إعادة ربطها بالعميل الجديد
             val accountIdMap = mutableMapOf<Long, Long>()
-            data.optJSONArray("accounts")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val newId = Ids.next()
-                    val oldId = o.optLong("id", -1L)
-                    if (oldId > 0) accountIdMap[oldId] = newId
-                    val oldClient = o.optLong("clientId", -1L)
-                    val mappedClient = clientIdMap[oldClient]
-                    if (mappedClient == null) continue   // حساب بلا عميل صالح — يتجاوزه بأمان
-                    db.accountDao().insert(AccountEntity(
-                        id = newId,
-                        clientId = mappedClient,
-                        name = o.getString("name"),
-                        icon = o.optString("icon", "💰"),
-                        realBalance = o.optDouble("realBalance"),
-                    ))
-                    accountCount++
-                }
+            b.accounts.forEach { a ->
+                val mappedClient = clientIdMap[a.oldClientId]
+                if (mappedClient == null) return@forEach   // حساب بلا عميل صالح — يتجاوزه بأمان
+                val newId = Ids.next()
+                if (a.oldId > 0) accountIdMap[a.oldId] = newId
+                db.accountDao().insert(AccountEntity(
+                    id = newId, clientId = mappedClient, name = a.name, icon = a.icon, realBalance = a.realBalance,
+                ))
+                accountCount++
             }
             // 6) عمليات الحسابات (دين/سداد) — إعادة ربطها بالحساب الجديد
-            data.optJSONArray("operations")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val oldAccount = o.optLong("accountId", -1L)
-                    val mappedAccount = accountIdMap[oldAccount]
-                    if (mappedAccount == null) continue   // عملية بلا حساب صالح — يتجاوزها بأمان
-                    db.operationDao().insert(OperationEntity(
-                        id = Ids.next(),
-                        accountId = mappedAccount,
-                        type = runCatching { OpType.valueOf(o.getString("type")) }.getOrDefault(OpType.DEBT).name,
-                        amount = o.getDouble("amount"),
-                        note = if (o.isNull("note")) null else o.getString("note"),
-                        date = o.getLong("date"),
-                        materialsJson = if (o.isNull("materials")) null else o.getString("materials"),
-                        receiptPath = if (o.isNull("receiptPath")) null else o.getString("receiptPath"),
-                        // النسخ القديمة بلا هذه المفاتيح → القيم الافتراضية false (عملية عادية)
-                        isInvoice = o.optBoolean("isInvoice", false),
-                        invoiceRef = if (o.isNull("invoiceRef")) null else o.optString("invoiceRef", "").ifBlank { null },
-                        invoiceDelivered = o.optBoolean("invoiceDelivered", false),
-                        // حقول v2.7.0 — النسخ القديمة بلاها (إصلاح data-1/data-4)
-                        dueDate = if (o.isNull("dueDate")) null else o.optLong("dueDate"),
-                        currency = if (o.isNull("currency")) null else o.optString("currency", "").ifBlank { null },
-                    ))
-                    opCount++
-                }
+            b.operations.forEach { o ->
+                val mappedAccount = accountIdMap[o.oldAccountId] ?: return@forEach   // عملية بلا حساب صالح — يتجاوزها بأمان
+                db.operationDao().insert(OperationEntity(
+                    id = Ids.next(), accountId = mappedAccount, type = o.type.name, amount = o.amount,
+                    note = o.note, date = o.date, materialsJson = o.materialsJson, receiptPath = o.receiptPath,
+                    isInvoice = o.isInvoice, invoiceRef = o.invoiceRef, invoiceDelivered = o.invoiceDelivered,
+                    dueDate = o.dueDate, currency = o.currency,
+                ))
+                opCount++
             }
             // 7) سجل التحويلات — إعادة ربطه بكل الأطراف الجديدة
-            data.optJSONArray("transfers")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val fromAcc = accountIdMap[o.optLong("fromAccountId", -1L)]
-                    val toAcc = accountIdMap[o.optLong("toAccountId", -1L)]
-                    val fromClient = clientIdMap[o.optLong("fromClientId", -1L)]
-                    val toClient = clientIdMap[o.optLong("toClientId", -1L)]
-                    if (fromAcc == null || toAcc == null || fromClient == null || toClient == null) continue
-                    db.transferDao().insert(TransferEntity(
-                        id = Ids.next(),
-                        fromClientId = fromClient, fromAccountId = fromAcc,
-                        toClientId = toClient, toAccountId = toAcc,
-                        amount = o.getDouble("amount"), date = o.getLong("date"),
-                    ))
-                    transferCount++
-                }
+            b.transfers.forEach { t ->
+                val fromAcc = accountIdMap[t.fromAccountId]
+                val toAcc = accountIdMap[t.toAccountId]
+                val fromClient = clientIdMap[t.fromClientId]
+                val toClient = clientIdMap[t.toClientId]
+                if (fromAcc == null || toAcc == null || fromClient == null || toClient == null) return@forEach
+                db.transferDao().insert(TransferEntity(
+                    id = Ids.next(),
+                    fromClientId = fromClient, fromAccountId = fromAcc,
+                    toClientId = toClient, toAccountId = toAcc,
+                    amount = t.amount, date = t.date,
+                ))
+                transferCount++
             }
         }
         ImportResult(

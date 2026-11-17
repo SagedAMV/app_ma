@@ -13,8 +13,8 @@ android {
         applicationId = "com.mahfazty.smart"
         minSdk = 24
         targetSdk = 35
-        versionCode = 21
-        versionName = "2.8.0"
+        versionCode = 22
+        versionName = "2.8.1"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -83,4 +83,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    // اختبارات الوحدة — عزل منطق استيراد النسخ الاحتياطية وتجريبه على JVM
+    testImplementation(libs.junit)
+    // Android لا يوفر org.json الحقيقية على JVM للاختبارات — نستخدم المكتبة الأصلية
+    testImplementation(libs.org.json)
 }
