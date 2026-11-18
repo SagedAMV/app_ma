@@ -80,6 +80,7 @@ import com.mahfazty.smart.ui.components.bounceClick
 import com.mahfazty.smart.ui.theme.LocalAppColors
 import com.mahfazty.smart.ui.theme.parseHex
 import com.mahfazty.smart.ui.theme.rememberReduceMotion
+import com.mahfazty.smart.ui.util.readBackupText
 import com.mahfazty.smart.ui.util.shareFile
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -230,18 +231,20 @@ fun SettingsScreen(
     var confirmClear by remember { mutableStateOf(false) }
     var checks by remember { mutableStateOf<List<CheckResult>>(emptyList()) }
     LaunchedEffect(Unit) { vm.checks.collect { checks = it } }
-    // معالجة أخطاء المستخدم: قراءة الملف أولاً (فشل القراءة يُبلغ كتوست بدل الصمت التام)،
+    // معالجة أخطاء المستخدم: قراءة الملف أولاً بمحاولات متعددة مع تشخيص كامل،
     // ثم تأكيد صريح قبل الدمج لأن الاستيراد يضيف فوق البيانات الحالية ولا يستبدلها.
+    // إصلاح «الملف فارغ»: سابقًا كانت القراءة بمحاولة واحدة وأي فشل (صلاحية، تيار فارغ،
+    // خطأ I/O) يُبتلع بـ getOrNull() فيظهر «الملف فارغ» رغم أن الملف سليم — الآن كل
+    // محاولة تُسجل سبب فشلها الحقيقي وتُعرض في نافذة تشخيص.
     var pendingImport by remember { mutableStateOf<String?>(null) }
+    var importReadError by remember { mutableStateOf<String?>(null) }
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
-            val text = runCatching {
-                context.contentResolver.openInputStream(it)?.use { input ->
-                    input.bufferedReader(Charsets.UTF_8).readText()
-                }
-            }.getOrNull()
-            if (text.isNullOrBlank()) vm.importJson("") // يمرر للمحرك فيُظهر رسالة خطأ واضحة
-            else pendingImport = text
+            val result = context.contentResolver.readBackupText(it)
+            // القارئ يضمن ok=true فقط مع نص غير فارغ — أي فشل آخر (استثناء، تيار فارغ
+            // من مزود، إعادة null) يظهر سببه الحقيقي في نافذة التشخيص بدل «الملف فارغ»
+            if (result.ok && !result.text.isNullOrBlank()) pendingImport = result.text
+            else importReadError = result.failureMessage()
         }
     }
 
@@ -489,7 +492,10 @@ fun SettingsScreen(
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 DataButton("💾 عمل نسخة احتياطية", MaterialTheme.colorScheme.primary) { vm.exportJson(context) }
                 DataButton("📊 تصدير CSV", MaterialTheme.colorScheme.primary) { vm.exportCsv(context) }
-                DataButton("📥 استيراد", MaterialTheme.colorScheme.primary) { importPicker.launch("application/json") }
+                // إصلاح «الملف فارغ»: رفع قيود MIME — معظم مديري الملفات يفهرسون .json كـ
+                // octet-stream فلا يظهر بفلتر application/json، فيضطر المستخدم لمسارات بديلة
+                // يفشل فتحها. نسمح باختيار أي ملف — التحقق من المحتوى يحدث بعد القراءة على أي حال.
+                DataButton("📥 استيراد", MaterialTheme.colorScheme.primary) { importPicker.launch("*/*") }
                 Box(
                     Modifier
                         .border(1.5.dp, LocalAppColors.current.red.copy(alpha = dangerPulse), RoundedCornerShape(14.dp))
@@ -578,6 +584,18 @@ fun SettingsScreen(
             danger = false,
             onConfirm = { pendingImport = null; vm.importJson(text) },
             onDismiss = { pendingImport = null },
+        )
+    }
+    // نافذة تشخيص فشل قراءة الملف — تُظهر السبب الحقيقي (المزود + استثناء كل محاولة)
+    // بدل رسالة «الملف فارغ» المضللة التي كانت تظهر لأي فشل قراءة
+    importReadError?.let { diag ->
+        ConfirmDialog(
+            title = "تعذر قراءة الملف",
+            message = diag,
+            confirmText = "حسناً",
+            danger = false,
+            onConfirm = { importReadError = null },
+            onDismiss = { importReadError = null },
         )
     }
 }

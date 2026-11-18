@@ -1,5 +1,9 @@
 pluginManagement {
     repositories {
+        // مرايا Huawei/Tencent أولًا — mavenCentral يرد أحيانًا بـ 429 (حد معدل)
+        // من بيئة البناء السحابية، ومرايا Aliyun كانت ترد 502 تحت حِمل طلبات Gradle
+        maven("https://repo.huaweicloud.com/repository/maven/")
+        maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -14,6 +18,8 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven("https://repo.huaweicloud.com/repository/maven/")
+        maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
         google()
         mavenCentral()
     }
