@@ -16,9 +16,11 @@ import com.mahfazty.smart.data.db.toEntity
 import com.mahfazty.smart.data.db.toJsonOrNull
 import com.mahfazty.smart.data.db.toMaterials
 import com.mahfazty.smart.domain.BackupParser
+import com.mahfazty.smart.domain.Csv
 import com.mahfazty.smart.domain.Ids
 import com.mahfazty.smart.domain.Money
 import com.mahfazty.smart.domain.WalletEngine
+import com.mahfazty.smart.domain.categoryName
 import com.mahfazty.smart.domain.model.AppSettings
 import com.mahfazty.smart.domain.model.Category
 import com.mahfazty.smart.domain.model.CategoryIds
@@ -40,6 +42,7 @@ import com.mahfazty.smart.domain.model.Wallet
 import com.mahfazty.smart.domain.model.WalletError
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -600,20 +603,37 @@ class WalletRepository(
         )
     }.getOrElse { e -> ImportResult(false, "تعذر قراءة الملف: ${e.message}") }
 
+    /**
+     * تصدير العمليات CSV — عبر Csv (RFC 4180) إصلاح «الجدول ينشاء خطأ بالكامل»:
+     *  - المبلغ كان يُصدر "23,000" بفاصل تجميع فينشطر الخلية لعمودين (194 من 474 صفًا
+     *    في بيانات المستخدم الحقيقية) — الآن Money.csvAmount بلا فواصل نهائيًا
+     *  - الملاحظة كانت تُبدل فيها الفاصلة إلى عربية (تشويه بيانات المستخدم) والسطر
+     *    الجديد يكسر الصف — الآن الاقتباس الصحيح يحفظ النص كما هو حرفيًا
+     *  - الفئات المخصصة كانت تُفقدها (categoryName بلا settings) — الآن تُجلب
+     *  - التاريخ يشمل الوقت: العمليات المتكررة في نفس اليوم تبقى مرتبة ومميزة
+     */
     suspend fun exportCsv(): String {
         val txs = db.transactionDao().getAll().map { it.toDomain() }
-        val sb = StringBuilder("\uFEFF")
-        sb.append("التاريخ,النوع,الفئة,المبلغ,الصندوق,الملاحظة\n")
+        val settings = settingsRepo.settings.first()
+        val dateFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+        val sb = StringBuilder(Csv.BOM)
+        sb.append(Csv.row("التاريخ", "النوع", "الفئة", "المبلغ", "الصندوق", "الملاحظة"))
         txs.sortedBy { it.date }.forEach { t ->
             val type = when (t.type) {
                 TxType.INCOME -> "دخل"
                 TxType.EXPENSE -> "مصروف"
                 TxType.TRANSFER -> "تحويل"
             }
-            val cat = com.mahfazty.smart.domain.categoryName(t.category)
-            val wallet = if (t.wallet == Wallet.BANK) "بنك" else "كاش"
-            val note = t.note.orEmpty().replace(",", "،")
-            sb.append("${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(t.date))},$type,$cat,${com.mahfazty.smart.domain.Money.fmtLat(t.amount)},$wallet,$note\n")
+            sb.append(
+                Csv.row(
+                    dateFmt.format(java.util.Date(t.date)),
+                    type,
+                    categoryName(t.category, settings),
+                    Money.csvAmount(t.amount),
+                    if (t.wallet == Wallet.BANK) "بنك" else "كاش",
+                    t.note.orEmpty(),
+                )
+            )
         }
         return sb.toString()
     }

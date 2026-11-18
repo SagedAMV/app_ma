@@ -332,6 +332,17 @@ object Money {
         return latinFmt.format(kotlin.math.round(n))
     }
 
+    /**
+     * مبلغ CSV: صحيح مقرب بلا فواصل تجميع إطلاقًا — إصلاح «الجدول ينشاء خطأ»:
+     * fmtLat كان ينتج "23,000" والفاصلة تنشطر الخلية إلى عمودين في Excel
+     * (ثبت على بيانات المستخدم الحقيقية: 194 من 474 صفًا منشطرًا).
+     * toLong().toString() بلا Locale ولا NumberFormat — لا طريق لأي فاصل.
+     */
+    fun csvAmount(n: Double): String {
+        if (n.isNaN() || n.isInfinite()) return "0"
+        return kotlin.math.round(n).toLong().toString()
+    }
+
     /** نص حقل إدخال بلا فواصل تجميع — حتى يُقبل عند الحفظ */
     fun input(n: Double): String {
         if (n.isNaN() || n.isInfinite() || n == 0.0) return ""

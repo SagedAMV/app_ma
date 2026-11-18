@@ -478,21 +478,36 @@ class AccountOpsViewModel(
     fun exportAccountCsv(context: android.content.Context) = viewModelScope.launch {
         val c = client.value ?: return@launch
         val acc = account.value ?: return@launch
-        val sb = StringBuilder("\uFEFF")
-        sb.append("التاريخ,النوع,المبلغ,العملة,البيان,المواد,الفاتورة\n")
+        // إصلاح «الجدول ينشاء خطأ بالكامل»: بناء الصفوف عبر Csv (RFC 4180) —
+        // المبلغ بلا فواصل تجميع (كانت تنشطر الخلية لعمودين في Excel)، الملاحظات
+        // والمواد تُقتبس صحيحًا بدل تبديل الفواصل (تشويه للنص)، والوقت يبقى في التاريخ
+        val dateFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+        val sb = StringBuilder(com.mahfazty.smart.domain.Csv.BOM)
+        sb.append(
+            com.mahfazty.smart.domain.Csv.row("التاريخ", "النوع", "المبلغ", "العملة", "البيان", "المواد", "الفاتورة")
+        )
         acc.operations.sortedBy { it.date }.forEach { op ->
             val label = if (op.type == OpType.DEBT) "عليه" else "له"
-            val materials = op.materials.joinToString("؛ ") { m -> "${m.name} (${m.qty}×${m.unitPrice})" }
+            val materials = op.materials.joinToString("؛ ") { m ->
+                "${m.name} (${com.mahfazty.smart.domain.Csv.num(m.qty)}×${com.mahfazty.smart.domain.Csv.num(m.unitPrice)})"
+            }
             sb.append(
-                "${com.mahfazty.smart.domain.Dates.fileStamp(op.date)},$label," +
-                    "${com.mahfazty.smart.domain.Money.fmtLat(op.amount)},${op.currency ?: ""}," +
-                    "${(op.note ?: "").replace(",", "،")}," +
-                    "${materials.replace(",", "،")},${if (op.isInvoice) (op.invoiceRef ?: "") else ""}\n"
+                com.mahfazty.smart.domain.Csv.row(
+                    dateFmt.format(java.util.Date(op.date)),
+                    label,
+                    com.mahfazty.smart.domain.Money.csvAmount(op.amount),
+                    op.currency.orEmpty(),
+                    op.note.orEmpty(),
+                    materials,
+                    if (op.isInvoice) op.invoiceRef.orEmpty() else "",
+                )
             )
         }
         runCatching {
             val dir = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
-            val file = java.io.File(dir, "mahfazty-account-${acc.account.name}-${com.mahfazty.smart.domain.Dates.fileStamp(System.currentTimeMillis())}.csv")
+            // تعقيم اسم الحساب: / \ : * ? " < > | محارف ممنوعة في أسماء ملفات Android تكسر File()
+            val safeName = acc.account.name.replace(Regex("[\\\\/:*?\"<>|]"), "-")
+            val file = java.io.File(dir, "mahfazty-account-$safeName-${com.mahfazty.smart.domain.Dates.fileStamp(System.currentTimeMillis())}.csv")
             file.writeText(sb.toString(), Charsets.UTF_8)
             val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             com.mahfazty.smart.ui.util.shareFile(context, uri, "text/csv", "كشف حساب: ${acc.account.name}")
