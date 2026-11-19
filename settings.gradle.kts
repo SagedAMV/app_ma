@@ -27,3 +27,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Mahfazty"
 include(":app")
+include(":design-proposals")

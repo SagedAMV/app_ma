@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.mahfazty.smart.design.ProposalScreensTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-11-19T20:42:52" hostname="c-6aff5406-140d72b5-ec176b13ce6d" time="12.375">
+  <properties/>
+  <testcase name="transferSheet" classname="com.mahfazty.smart.design.ProposalScreensTest" time="8.646"/>
+  <testcase name="insufficientSheet" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.427"/>
+  <testcase name="operationSheet" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.212"/>
+  <testcase name="accountOps" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.531"/>
+  <testcase name="homeDark" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.444"/>
+  <testcase name="goals" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.42"/>
+  <testcase name="addTransactionSheet" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.2"/>
+  <testcase name="clients" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.37"/>
+  <testcase name="settings" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.206"/>
+  <testcase name="statementOptions" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.208"/>
+  <testcase name="savings" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.216"/>
+  <testcase name="transactions" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.186"/>
+  <testcase name="homeLight" classname="com.mahfazty.smart.design.ProposalScreensTest" time="0.306"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
